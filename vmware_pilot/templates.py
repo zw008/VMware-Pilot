@@ -303,11 +303,449 @@ def compliance_scan(
     )
 
 
+def network_segment_setup(
+    segment_id: str,
+    display_name: str,
+    subnet: str,
+    transport_zone_path: str,
+    tier1_id: str = "",
+    tier0_path: str = "",
+    nat_source: str = "",
+    nat_translated: str = "",
+    dfw_policy_id: str = "",
+    target: str = "",
+) -> Workflow:
+    """Set up a complete app network: segment + gateway + NAT + firewall.
+
+    Steps:
+      1. Create Tier-1 gateway (if tier1_id provided)
+      2. Create network segment
+      3. Create NAT rule (if nat_source provided)
+      4. Create DFW policy (if dfw_policy_id provided)
+      5. Approve before finalizing
+      6. Verify segment connectivity
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps: list[WorkflowStep] = []
+    idx = 0
+
+    if tier1_id:
+        steps.append(WorkflowStep(
+            index=idx, action="create_gateway", skill="nsx",
+            tool="create_tier1_gateway",
+            params={"tier1_id": tier1_id, "display_name": f"{display_name}-gw",
+                    "tier0_path": tier0_path, "target": target},
+            rollback_tool="delete_tier1_gateway",
+            rollback_params={"tier1_id": tier1_id, "target": target},
+        ))
+        idx += 1
+
+    steps.append(WorkflowStep(
+        index=idx, action="create_segment", skill="nsx",
+        tool="create_segment",
+        params={"segment_id": segment_id, "display_name": display_name,
+                "transport_zone_path": transport_zone_path, "subnet": subnet, "target": target},
+        rollback_tool="delete_segment",
+        rollback_params={"segment_id": segment_id, "target": target},
+    ))
+    idx += 1
+
+    if nat_source and nat_translated and tier1_id:
+        steps.append(WorkflowStep(
+            index=idx, action="create_nat", skill="nsx",
+            tool="create_nat_rule",
+            params={"tier1_id": tier1_id, "rule_id": f"{segment_id}-snat",
+                    "action": "SNAT", "source_network": nat_source,
+                    "translated_network": nat_translated, "target": target},
+            rollback_tool="delete_nat_rule",
+            rollback_params={"tier1_id": tier1_id, "rule_id": f"{segment_id}-snat", "target": target},
+        ))
+        idx += 1
+
+    if dfw_policy_id:
+        steps.append(WorkflowStep(
+            index=idx, action="create_firewall", skill="nsx-security",
+            tool="create_dfw_policy",
+            params={"policy_id": dfw_policy_id, "display_name": f"{display_name}-policy", "target": target},
+            rollback_tool="delete_dfw_policy",
+            rollback_params={"policy_id": dfw_policy_id, "target": target},
+        ))
+        idx += 1
+
+    steps.append(WorkflowStep(
+        index=idx, action="require_approval", skill="pilot", tool="approve",
+        params={"message": f"Network '{display_name}' created. Verify and finalize?"},
+    ))
+    idx += 1
+
+    steps.append(WorkflowStep(
+        index=idx, action="verify", skill="nsx",
+        tool="list_segments", params={"target": target},
+    ))
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="network_segment_setup",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"segment_id": segment_id, "display_name": display_name, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def vks_cluster_deploy(
+    namespace_name: str,
+    cluster_id: str,
+    storage_policy: str,
+    tkc_name: str,
+    k8s_version: str,
+    vm_class: str = "best-effort-medium",
+    worker_count: int = 3,
+    target: str = "",
+) -> Workflow:
+    """Deploy a complete VKS environment: namespace + TKC cluster + verify.
+
+    Steps:
+      1. Create vSphere Namespace
+      2. Approve before cluster creation
+      3. Create TKC cluster
+      4. Verify cluster health
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps = [
+        WorkflowStep(
+            index=0, action="create_namespace", skill="vks",
+            tool="create_namespace",
+            params={"name": namespace_name, "cluster_id": cluster_id,
+                    "storage_policy": storage_policy, "dry_run": False, "target": target},
+            rollback_tool="delete_namespace",
+            rollback_params={"name": namespace_name, "confirmed": True, "dry_run": False, "target": target},
+        ),
+        WorkflowStep(
+            index=1, action="require_approval", skill="pilot", tool="approve",
+            params={"message": f"Namespace '{namespace_name}' created. Deploy TKC cluster '{tkc_name}'?"},
+        ),
+        WorkflowStep(
+            index=2, action="create_tkc", skill="vks",
+            tool="create_tkc_cluster",
+            params={"name": tkc_name, "namespace": namespace_name, "k8s_version": k8s_version,
+                    "vm_class": vm_class, "worker_count": worker_count,
+                    "dry_run": False, "target": target},
+            rollback_tool="delete_tkc_cluster",
+            rollback_params={"name": tkc_name, "namespace": namespace_name,
+                             "confirmed": True, "dry_run": False, "target": target},
+        ),
+        WorkflowStep(
+            index=3, action="verify_cluster", skill="vks",
+            tool="get_tkc_cluster",
+            params={"name": tkc_name, "namespace": namespace_name, "target": target},
+        ),
+    ]
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="vks_cluster_deploy",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"namespace": namespace_name, "tkc_name": tkc_name, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def rolling_restart(
+    vm_names: list[str],
+    target: str = "",
+) -> Workflow:
+    """Rolling restart: power off → power on each VM, health check between each.
+
+    Steps per VM:
+      1. Check health (no active alarms)
+      2. Power off VM
+      3. Power on VM
+      4. Verify health after restart
+    Approval gate before starting.
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps: list[WorkflowStep] = []
+    idx = 0
+
+    steps.append(WorkflowStep(
+        index=idx, action="pre_check", skill="monitor",
+        tool="get_alarms", params={"target": target},
+    ))
+    idx += 1
+
+    steps.append(WorkflowStep(
+        index=idx, action="require_approval", skill="pilot", tool="approve",
+        params={"message": f"Rolling restart {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"},
+    ))
+    idx += 1
+
+    for vm in vm_names:
+        steps.append(WorkflowStep(
+            index=idx, action=f"power_off_{vm}", skill="aiops",
+            tool="vm_power_off",
+            params={"vm_name": vm, "force": False, "target": target},
+            rollback_tool="vm_power_on",
+            rollback_params={"vm_name": vm, "target": target},
+        ))
+        idx += 1
+
+        steps.append(WorkflowStep(
+            index=idx, action=f"power_on_{vm}", skill="aiops",
+            tool="vm_power_on",
+            params={"vm_name": vm, "target": target},
+        ))
+        idx += 1
+
+        steps.append(WorkflowStep(
+            index=idx, action=f"health_check_{vm}", skill="monitor",
+            tool="get_alarms", params={"target": target},
+        ))
+        idx += 1
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="rolling_restart",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"vm_names": vm_names, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def capacity_expansion(
+    vm_name: str,
+    cpu: int | None = None,
+    memory_mb: int | None = None,
+    target: str = "",
+) -> Workflow:
+    """Capacity expansion: check remaining → approve → reconfigure → verify.
+
+    Steps:
+      1. Check remaining capacity (aria)
+      2. Check rightsizing recommendations (aria)
+      3. Approve expansion
+      4. Apply reconfiguration (aiops)
+      5. Verify health after change
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    change_desc = []
+    if cpu:
+        change_desc.append(f"CPU→{cpu}")
+    if memory_mb:
+        change_desc.append(f"Memory→{memory_mb}MB")
+
+    steps = [
+        WorkflowStep(
+            index=0, action="check_capacity", skill="aria",
+            tool="get_remaining_capacity",
+            params={"resource_id": vm_name, "target": target},
+        ),
+        WorkflowStep(
+            index=1, action="check_rightsizing", skill="aria",
+            tool="list_rightsizing_recommendations",
+            params={"resource_id": vm_name, "target": target},
+        ),
+        WorkflowStep(
+            index=2, action="require_approval", skill="pilot", tool="approve",
+            params={"message": f"Expand '{vm_name}': {', '.join(change_desc)}. Approve?"},
+        ),
+        WorkflowStep(
+            index=3, action="apply_change", skill="aiops",
+            tool="vm_create_plan",
+            params={"operations": [{"action": "reconfigure", "vm_name": vm_name,
+                                    **({"cpu": cpu} if cpu else {}),
+                                    **({"memory_mb": memory_mb} if memory_mb else {})}],
+                    "target": target},
+        ),
+        WorkflowStep(
+            index=4, action="verify_health", skill="monitor",
+            tool="get_alarms", params={"target": target},
+        ),
+    ]
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="capacity_expansion",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"vm_name": vm_name, "cpu": cpu, "memory_mb": memory_mb, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def disaster_recovery(
+    vm_name: str,
+    snapshot_name: str = "baseline",
+    target: str = "",
+) -> Workflow:
+    """Disaster recovery: revert from snapshot → verify network → verify health.
+
+    Steps:
+      1. Approve recovery action
+      2. Revert VM to snapshot (clean slate)
+      3. Verify VM is running
+      4. Check network connectivity (NSX segments)
+      5. Check health (no new alarms)
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps = [
+        WorkflowStep(
+            index=0, action="require_approval", skill="pilot", tool="approve",
+            params={"message": f"Disaster recovery: revert '{vm_name}' to snapshot '{snapshot_name}'. Confirm?"},
+        ),
+        WorkflowStep(
+            index=1, action="revert_snapshot", skill="aiops",
+            tool="vm_clean_slate",
+            params={"vm_name": vm_name, "snapshot_name": snapshot_name, "target": target},
+        ),
+        WorkflowStep(
+            index=2, action="verify_vm", skill="monitor",
+            tool="vm_info",
+            params={"vm_name": vm_name, "target": target},
+        ),
+        WorkflowStep(
+            index=3, action="verify_network", skill="nsx",
+            tool="list_segments", params={"target": target},
+        ),
+        WorkflowStep(
+            index=4, action="verify_health", skill="monitor",
+            tool="get_alarms", params={"target": target},
+        ),
+    ]
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="disaster_recovery",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"vm_name": vm_name, "snapshot_name": snapshot_name, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def patch_deployment(
+    vm_names: list[str],
+    patch_local_path: str,
+    patch_guest_path: str,
+    install_command: str,
+    username: str = "root",
+    password: str = "",
+    target: str = "",
+) -> Workflow:
+    """Rolling patch deployment: upload → install → verify, one VM at a time.
+
+    Steps per VM:
+      1. Upload patch file
+      2. Execute install command
+      3. Verify health
+    Approval gate before starting.
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps: list[WorkflowStep] = []
+    idx = 0
+
+    steps.append(WorkflowStep(
+        index=idx, action="require_approval", skill="pilot", tool="approve",
+        params={"message": f"Deploy patch to {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"},
+    ))
+    idx += 1
+
+    for vm in vm_names:
+        steps.append(WorkflowStep(
+            index=idx, action=f"upload_{vm}", skill="aiops",
+            tool="vm_guest_upload",
+            params={"vm_name": vm, "local_path": patch_local_path,
+                    "guest_path": patch_guest_path,
+                    "username": username, "password": password, "target": target},
+        ))
+        idx += 1
+
+        steps.append(WorkflowStep(
+            index=idx, action=f"install_{vm}", skill="aiops",
+            tool="vm_guest_exec_output",
+            params={"vm_name": vm, "command": install_command,
+                    "username": username, "password": password, "target": target},
+        ))
+        idx += 1
+
+        steps.append(WorkflowStep(
+            index=idx, action=f"verify_{vm}", skill="monitor",
+            tool="get_alarms", params={"target": target},
+        ))
+        idx += 1
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="patch_deployment",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"vm_names": vm_names, "patch": patch_local_path, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
+def storage_expansion(
+    host_name: str,
+    iscsi_address: str,
+    iscsi_port: int = 3260,
+    target: str = "",
+) -> Workflow:
+    """Storage expansion: add iSCSI target → rescan → verify.
+
+    Steps:
+      1. Check current iSCSI status
+      2. Enable iSCSI adapter (if not enabled)
+      3. Approve before adding target
+      4. Add iSCSI target
+      5. Rescan storage
+      6. Verify new datastores visible
+    """
+    now = datetime.now(tz=timezone.utc).isoformat()
+    steps = [
+        WorkflowStep(
+            index=0, action="check_iscsi_status", skill="storage",
+            tool="storage_iscsi_status",
+            params={"host_name": host_name, "target": target},
+        ),
+        WorkflowStep(
+            index=1, action="enable_iscsi", skill="storage",
+            tool="storage_iscsi_enable",
+            params={"host_name": host_name, "target": target},
+        ),
+        WorkflowStep(
+            index=2, action="require_approval", skill="pilot", tool="approve",
+            params={"message": f"Add iSCSI target {iscsi_address}:{iscsi_port} to '{host_name}'. Approve?"},
+        ),
+        WorkflowStep(
+            index=3, action="add_iscsi_target", skill="storage",
+            tool="storage_iscsi_add_target",
+            params={"host_name": host_name, "address": iscsi_address,
+                    "port": iscsi_port, "target": target},
+            rollback_tool="storage_iscsi_remove_target",
+            rollback_params={"host_name": host_name, "address": iscsi_address,
+                             "port": iscsi_port, "target": target},
+        ),
+        WorkflowStep(
+            index=4, action="rescan_storage", skill="storage",
+            tool="storage_rescan",
+            params={"host_name": host_name, "target": target},
+        ),
+        WorkflowStep(
+            index=5, action="verify_datastores", skill="storage",
+            tool="list_all_datastores", params={"target": target},
+        ),
+    ]
+
+    return Workflow(
+        id=new_workflow_id(), workflow_type="storage_expansion",
+        state=WorkflowState.PENDING, steps=steps,
+        params={"host_name": host_name, "iscsi_address": iscsi_address, "target": target},
+        created_at=now, updated_at=now,
+    )
+
+
 BUILTIN_TEMPLATES = {
     "clone_and_test": clone_and_test,
     "incident_response": incident_response,
     "plan_and_approve": plan_and_approve,
     "compliance_scan": compliance_scan,
+    "network_segment_setup": network_segment_setup,
+    "vks_cluster_deploy": vks_cluster_deploy,
+    "rolling_restart": rolling_restart,
+    "capacity_expansion": capacity_expansion,
+    "disaster_recovery": disaster_recovery,
+    "patch_deployment": patch_deployment,
+    "storage_expansion": storage_expansion,
 }
 
 

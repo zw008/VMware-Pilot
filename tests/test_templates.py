@@ -3,11 +3,18 @@
 import pytest
 
 from vmware_pilot.templates import (
-    TEMPLATES,
+    BUILTIN_TEMPLATES as TEMPLATES,
+    capacity_expansion,
     clone_and_test,
     compliance_scan,
+    disaster_recovery,
     incident_response,
+    network_segment_setup,
+    patch_deployment,
     plan_and_approve,
+    rolling_restart,
+    storage_expansion,
+    vks_cluster_deploy,
 )
 
 
@@ -134,13 +141,154 @@ class TestComplianceScan:
 
 
 @pytest.mark.unit
+class TestNetworkSegmentSetup:
+    def test_creates_workflow(self):
+        wf = network_segment_setup(
+            segment_id="app-seg", display_name="App Segment",
+            subnet="10.10.1.1/24", transport_zone_path="/infra/sites/default/tz-overlay",
+            tier1_id="app-t1", nat_source="10.10.1.0/24", nat_translated="172.16.0.10",
+        )
+        assert wf.workflow_type == "network_segment_setup"
+        assert len(wf.steps) >= 4  # gateway + segment + nat + approve + verify
+
+    def test_has_approval_and_rollback(self):
+        wf = network_segment_setup(
+            segment_id="seg1", display_name="S", subnet="10.0.0.1/24",
+            transport_zone_path="/tz", tier1_id="t1",
+        )
+        assert any(s.action == "require_approval" for s in wf.steps)
+        assert any(s.rollback_tool for s in wf.steps)
+
+    def test_minimal_without_nat(self):
+        wf = network_segment_setup(
+            segment_id="seg1", display_name="S", subnet="10.0.0.1/24",
+            transport_zone_path="/tz",
+        )
+        actions = [s.action for s in wf.steps]
+        assert "create_nat" not in actions
+        assert "create_segment" in actions
+
+
+@pytest.mark.unit
+class TestVksClusterDeploy:
+    def test_creates_workflow(self):
+        wf = vks_cluster_deploy(
+            namespace_name="dev", cluster_id="domain-c1",
+            storage_policy="vsan-default", tkc_name="dev-tkc", k8s_version="v1.28",
+        )
+        assert wf.workflow_type == "vks_cluster_deploy"
+        assert len(wf.steps) == 4
+
+    def test_has_approval(self):
+        wf = vks_cluster_deploy("ns", "c1", "pol", "tkc1", "v1.28")
+        assert any(s.action == "require_approval" for s in wf.steps)
+
+    def test_uses_vks_skill(self):
+        wf = vks_cluster_deploy("ns", "c1", "pol", "tkc1", "v1.28")
+        skills = {s.skill for s in wf.steps}
+        assert "vks" in skills
+
+
+@pytest.mark.unit
+class TestRollingRestart:
+    def test_creates_workflow(self):
+        wf = rolling_restart(vm_names=["db01", "db02", "db03"])
+        assert wf.workflow_type == "rolling_restart"
+        # pre_check + approve + 3*(off+on+check) = 11
+        assert len(wf.steps) == 11
+
+    def test_has_rollback_per_vm(self):
+        wf = rolling_restart(vm_names=["vm1"])
+        power_off_steps = [s for s in wf.steps if "power_off" in s.action]
+        assert all(s.rollback_tool == "vm_power_on" for s in power_off_steps)
+
+    def test_scales_with_vm_count(self):
+        wf2 = rolling_restart(vm_names=["a", "b"])
+        wf5 = rolling_restart(vm_names=["a", "b", "c", "d", "e"])
+        assert len(wf5.steps) > len(wf2.steps)
+
+
+@pytest.mark.unit
+class TestCapacityExpansion:
+    def test_creates_workflow(self):
+        wf = capacity_expansion(vm_name="db01", cpu=8, memory_mb=32768)
+        assert wf.workflow_type == "capacity_expansion"
+        assert len(wf.steps) == 5
+
+    def test_uses_aria_and_aiops(self):
+        wf = capacity_expansion(vm_name="x", cpu=4)
+        skills = {s.skill for s in wf.steps}
+        assert "aria" in skills
+        assert "aiops" in skills
+
+
+@pytest.mark.unit
+class TestDisasterRecovery:
+    def test_creates_workflow(self):
+        wf = disaster_recovery(vm_name="prod-db", snapshot_name="last-good")
+        assert wf.workflow_type == "disaster_recovery"
+        assert len(wf.steps) == 5
+
+    def test_approval_first(self):
+        wf = disaster_recovery(vm_name="x")
+        assert wf.steps[0].action == "require_approval"
+
+    def test_uses_nsx_for_network_verify(self):
+        wf = disaster_recovery(vm_name="x")
+        skills = {s.skill for s in wf.steps}
+        assert "nsx" in skills
+
+
+@pytest.mark.unit
+class TestPatchDeployment:
+    def test_creates_workflow(self):
+        wf = patch_deployment(
+            vm_names=["web01", "web02"],
+            patch_local_path="/tmp/patch.sh",
+            patch_guest_path="/tmp/patch.sh",
+            install_command="bash /tmp/patch.sh",
+        )
+        assert wf.workflow_type == "patch_deployment"
+        # approve + 2*(upload+install+verify) = 7
+        assert len(wf.steps) == 7
+
+    def test_scales_with_vm_count(self):
+        wf = patch_deployment(["a", "b", "c"], "/p", "/p", "bash /p")
+        assert len(wf.steps) == 10  # approve + 3*3
+
+
+@pytest.mark.unit
+class TestStorageExpansion:
+    def test_creates_workflow(self):
+        wf = storage_expansion(host_name="esxi-01", iscsi_address="10.0.0.100")
+        assert wf.workflow_type == "storage_expansion"
+        assert len(wf.steps) == 6
+
+    def test_has_rollback_on_add(self):
+        wf = storage_expansion(host_name="h1", iscsi_address="10.0.0.1")
+        add_step = [s for s in wf.steps if s.action == "add_iscsi_target"][0]
+        assert add_step.rollback_tool == "storage_iscsi_remove_target"
+
+    def test_uses_storage_skill(self):
+        wf = storage_expansion(host_name="h1", iscsi_address="10.0.0.1")
+        skills = {s.skill for s in wf.steps}
+        assert "storage" in skills
+
+
+@pytest.mark.unit
 class TestTemplateRegistry:
     def test_all_templates_registered(self):
-        assert "clone_and_test" in TEMPLATES
-        assert "incident_response" in TEMPLATES
-        assert "plan_and_approve" in TEMPLATES
-        assert "compliance_scan" in TEMPLATES
+        expected = [
+            "clone_and_test", "incident_response", "plan_and_approve", "compliance_scan",
+            "network_segment_setup", "vks_cluster_deploy", "rolling_restart",
+            "capacity_expansion", "disaster_recovery", "patch_deployment", "storage_expansion",
+        ]
+        for name in expected:
+            assert name in TEMPLATES, f"{name} not registered"
 
     def test_templates_callable(self):
         for name, fn in TEMPLATES.items():
             assert callable(fn)
+
+    def test_total_count(self):
+        assert len(TEMPLATES) == 11
