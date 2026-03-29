@@ -4,6 +4,9 @@ import pytest
 
 from vmware_pilot.templates import (
     BUILTIN_TEMPLATES as TEMPLATES,
+    baseline_audit,
+    baseline_capture,
+    baseline_remediate,
     capacity_expansion,
     clone_and_test,
     compliance_scan,
@@ -276,12 +279,90 @@ class TestStorageExpansion:
 
 
 @pytest.mark.unit
+class TestBaselineCapture:
+    def test_creates_workflow(self):
+        wf = baseline_capture(target="vcenter1")
+        assert wf.workflow_type == "baseline_capture"
+        assert len(wf.steps) == 5  # vms + hosts + network + storage + alarms
+
+    def test_selective_capture(self):
+        wf = baseline_capture(include_vms=True, include_hosts=False,
+                              include_network=False, include_storage=False, include_alarms=False)
+        assert len(wf.steps) == 1
+        assert wf.steps[0].action == "capture_vms"
+
+    def test_uses_multiple_skills(self):
+        wf = baseline_capture()
+        skills = {s.skill for s in wf.steps}
+        assert "monitor" in skills
+        assert "nsx" in skills
+        assert "storage" in skills
+
+    def test_no_approval_gate(self):
+        wf = baseline_capture()
+        assert not any(s.action == "require_approval" for s in wf.steps)
+
+    def test_custom_name(self):
+        wf = baseline_capture(baseline_name="prod-golden")
+        assert wf.params["baseline_name"] == "prod-golden"
+
+
+@pytest.mark.unit
+class TestBaselineAudit:
+    def test_creates_workflow(self):
+        wf = baseline_audit(baseline_name="prod-golden", target="vc1")
+        assert wf.workflow_type == "baseline_audit"
+        assert wf.params["baseline_name"] == "prod-golden"
+
+    def test_includes_anomaly_check(self):
+        wf = baseline_audit()
+        actions = [s.action for s in wf.steps]
+        assert "check_anomalies" in actions
+
+    def test_uses_aria(self):
+        wf = baseline_audit()
+        skills = {s.skill for s in wf.steps}
+        assert "aria" in skills
+
+
+@pytest.mark.unit
+class TestBaselineRemediate:
+    def test_creates_workflow(self):
+        drifts = [
+            {"resource": "vm-web01", "skill": "aiops", "tool": "vm_power_on", "params": {"vm_name": "vm-web01"}},
+            {"resource": "seg-app", "skill": "nsx", "tool": "create_segment", "params": {"segment_id": "seg-app"}},
+        ]
+        wf = baseline_remediate(drift_items=drifts)
+        assert wf.workflow_type == "baseline_remediate"
+        # pre_check + approve + 2 fixes + post_verify = 5
+        assert len(wf.steps) == 5
+
+    def test_has_approval(self):
+        wf = baseline_remediate(drift_items=[{"resource": "x", "skill": "aiops", "tool": "t", "params": {}}])
+        assert any(s.action == "require_approval" for s in wf.steps)
+
+    def test_scales_with_drift_count(self):
+        drifts = [{"resource": f"r{i}", "skill": "aiops", "tool": "t", "params": {}} for i in range(5)]
+        wf = baseline_remediate(drift_items=drifts)
+        # pre_check + approve + 5 fixes + post_verify = 8
+        assert len(wf.steps) == 8
+
+    def test_with_rollback(self):
+        drifts = [{"resource": "seg1", "skill": "nsx", "tool": "create_segment",
+                   "params": {}, "rollback_tool": "delete_segment", "rollback_params": {"segment_id": "seg1"}}]
+        wf = baseline_remediate(drift_items=drifts)
+        fix_step = [s for s in wf.steps if s.action.startswith("fix_")][0]
+        assert fix_step.rollback_tool == "delete_segment"
+
+
+@pytest.mark.unit
 class TestTemplateRegistry:
     def test_all_templates_registered(self):
         expected = [
             "clone_and_test", "incident_response", "plan_and_approve", "compliance_scan",
             "network_segment_setup", "vks_cluster_deploy", "rolling_restart",
             "capacity_expansion", "disaster_recovery", "patch_deployment", "storage_expansion",
+            "baseline_capture", "baseline_audit", "baseline_remediate",
         ]
         for name in expected:
             assert name in TEMPLATES, f"{name} not registered"
@@ -291,4 +372,4 @@ class TestTemplateRegistry:
             assert callable(fn)
 
     def test_total_count(self):
-        assert len(TEMPLATES) == 11
+        assert len(TEMPLATES) == 14
