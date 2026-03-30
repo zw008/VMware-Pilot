@@ -1,14 +1,18 @@
 ---
 name: vmware-pilot
 description: >
-  VMware workflow orchestration with approval gates. Use when user asks to
-  "design a workflow", "create a multi-step operation", "clone and test before applying",
-  "run an incident response", or needs cross-skill coordination with human approval.
-  For single VM operations use vmware-aiops. For monitoring use vmware-monitor.
+  Use this skill whenever the user wants to design, execute, or manage complex multi-step VMware workflows with human approval and automatic rollback.
+  Pilot is the orchestration brain — it breaks down a user's goal into steps across multiple VMware skills (aiops, monitor, nsx, aria, vks, storage), adds approval gates before destructive operations, and rolls back automatically if anything fails.
+  Always use vmware-pilot for: "clone and test before applying to production", "incident response with checkpoints", "set up infrastructure using multiple skills", "rolling restart with health checks", "baseline capture and drift detection", or any workflow needing approval gates or rollback.
+  14 built-in templates + custom YAML + AI-designed workflows from 162 available tools across 7 skills.
+  For single VM operations use vmware-aiops, for read-only queries use vmware-monitor.
 installer:
   kind: uv
   package: vmware-pilot
 allowed-tools: [Bash]
+metadata: {"openclaw":{"requires":{"env":["VMWARE_PILOT_CONFIG"],"bins":["vmware-pilot-mcp"]},"primaryEnv":"VMWARE_PILOT_CONFIG","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
+compatibility: >
+  Requires vmware-policy (auto-installed). All operations audited to ~/.vmware/audit.db.
 ---
 
 # VMware Pilot
@@ -173,6 +177,17 @@ No vCenter credentials needed — pilot orchestrates other skills that handle co
   }
 }
 ```
+
+## Audit & Safety
+
+All operations are automatically audited via vmware-policy (`@vmware_tool` decorator):
+- Every tool call logged to `~/.vmware/audit.db` (SQLite, framework-agnostic)
+- Policy rules enforced via `~/.vmware/rules.yaml` (deny rules, maintenance windows, risk levels)
+- Risk classification: each tool tagged as low/medium/high/critical
+- View recent operations: `vmware-audit log --last 20`
+- View denied operations: `vmware-audit log --status denied`
+
+vmware-policy is automatically installed as a dependency — no manual setup needed.
 
 ## License
 
