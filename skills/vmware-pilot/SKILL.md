@@ -3,7 +3,7 @@ name: vmware-pilot
 description: >
   Use this skill whenever the user wants to design, execute, or manage complex multi-step VMware workflows with human approval and automatic rollback.
   Pilot is the orchestration brain — it breaks down a user's goal into steps across multiple VMware skills (aiops, monitor, nsx, aria, vks, storage, avi), adds approval gates before destructive operations, and rolls back automatically if anything fails.
-  Always use vmware-pilot for: "clone and test before applying to production", "incident response with checkpoints", "set up infrastructure using multiple skills", "rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", "AKO-aware app deployment", or any workflow needing approval gates or rollback.
+  Always use vmware-pilot for: "clone and test before applying to production", "VMware incident response with checkpoints", "set up VMware infrastructure using multiple skills", "VMware rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", "AKO-aware app deployment", or any VMware workflow needing approval gates or rollback.
   14 built-in templates + custom YAML + AI-designed workflows from 185 available tools across 8 skills.
   For single VM operations use vmware-aiops, for read-only queries use vmware-monitor, for load balancer operations use vmware-avi.
 installer:
@@ -12,7 +12,7 @@ installer:
 allowed-tools: [Bash]
 metadata: {"openclaw":{"requires":{"env":["VMWARE_PILOT_CONFIG"],"bins":["vmware-pilot-mcp"]},"primaryEnv":"VMWARE_PILOT_CONFIG","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
 compatibility: >
-  Requires vmware-policy (auto-installed). All operations audited to ~/.vmware/audit.db.
+  vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All workflow operations audited to ~/.vmware/audit.db.
 ---
 
 # VMware Pilot

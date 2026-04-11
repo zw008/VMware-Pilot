@@ -1,5 +1,13 @@
 # VMware Pilot — Release Notes
 
+## v1.4.9 (2026-04-11)
+
+- Security: bump cryptography 46.0.6→46.0.7 (CVE-2026-39892, buffer overflow)
+- Fix: require explicit "VMware" context in pilot workflow routing triggers
+- Fix: clarify vmware-policy compatibility field (Python transitive dep, not required standalone binary)
+- Remove stale dist/ build artifacts from git tracking
+- Version aligned with VMware skill family (1.4.5 → 1.4.9)
+
 ## v1.4.5 — 2026-04-03
 
 - **Security**: bump pygments 2.19.2 → 2.20.0 (fix ReDoS CVE in GUID matching regex)
