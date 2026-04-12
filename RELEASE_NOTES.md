@@ -1,5 +1,14 @@
 # VMware Pilot — Release Notes
 
+## v1.5.0 (2026-04-12)
+
+### Anthropic Best Practices Integration
+
+- **[READ]/[WRITE] tool prefixes**: All MCP tool descriptions now start with [READ] or [WRITE] to clearly indicate operation type
+- **Read/write split counts**: SKILL.md MCP Tools section header shows exact read vs write tool counts
+- **Negative routing**: Description frontmatter includes "Do NOT use when..." clause to prevent misrouting
+- **Broadcom author attestation**: README.md, README-CN.md, and pyproject.toml include VMware by Broadcom author identity (wei-wz.zhou@broadcom.com) to resolve Snyk E005 brand warnings
+
 ## v1.4.9 (2026-04-11)
 
 - Security: bump cryptography 46.0.6→46.0.7 (CVE-2026-39892, buffer overflow)
