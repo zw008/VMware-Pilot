@@ -9,7 +9,7 @@ description = "VMware workflow orchestration — multi-step state machine with a
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
-authors = [{ name = "Wei Zhou / 周崴" }]
+authors = [{ name = "Wei Zhou", email = "wei-wz.zhou@broadcom.com" }]
 dependencies = [
     "vmware-policy>=1.0.0,<2.0",
     "mcp[cli]>=1.0,<2.0",

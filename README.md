@@ -1,5 +1,9 @@
 # VMware Pilot
 
+> **Author**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
+> This is a community-driven project by a VMware engineer, not an official VMware product.
+> For official VMware developer tools see [developer.broadcom.com](https://developer.broadcom.com).
+
 English | [中文](README-CN.md)
 
 Multi-step workflow orchestration for VMware MCP skills — state machine, approval gates, audit trail.

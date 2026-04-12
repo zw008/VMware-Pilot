@@ -133,7 +133,7 @@ Deploy a backend VM, create a K8s namespace, and wire up AKO Ingress to the AVI 
 5. vmware-avi ako sync status                   # verify VS created on AVI Controller
 ```
 
-## MCP Tools (11)
+## MCP Tools (11 — 3 read, 8 write/control)
 
 | Category | Tool | Risk | Description |
 |---|---|---|---|

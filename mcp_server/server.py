@@ -60,7 +60,7 @@ def plan_workflow(
     workflow_type: str,
     params: dict[str, Any],
 ) -> dict:
-    """Create an execution plan for a multi-step workflow.
+    """[WRITE] Create an execution plan for a multi-step workflow.
 
     Available workflow types:
       - clone_and_test: Clone VM → apply changes → monitor → approve → commit
@@ -103,7 +103,7 @@ def plan_workflow(
 @mcp.tool()
 @vmware_tool(risk_level="medium")
 def run_workflow(workflow_id: str) -> dict:
-    """Execute a planned workflow. Pauses at approval gates.
+    """[WRITE] Execute a planned workflow. Pauses at approval gates.
 
     Steps run sequentially. When an approval gate is reached, the workflow
     pauses with state 'awaiting_approval'. Call approve() to continue.
@@ -127,7 +127,7 @@ def run_workflow(workflow_id: str) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_workflow_status(workflow_id: str) -> dict:
-    """Get current workflow state, diff report, and audit log.
+    """[READ] Get current workflow state, diff report, and audit log.
 
     Args:
         workflow_id: The workflow ID to query.
@@ -144,7 +144,7 @@ def get_workflow_status(workflow_id: str) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="high")
 def approve(workflow_id: str, approver: str = "") -> dict:
-    """Approve a workflow that is waiting for human confirmation.
+    """[WRITE] Approve a workflow that is waiting for human confirmation.
 
     Only works when workflow state is 'awaiting_approval'.
     After approval, execution continues to the next steps.
@@ -166,7 +166,7 @@ def approve(workflow_id: str, approver: str = "") -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="high")
 def rollback(workflow_id: str) -> dict:
-    """Abort a workflow and rollback completed steps in reverse order.
+    """[WRITE] Abort a workflow and rollback completed steps in reverse order.
 
     Works in any state except 'completed'. Irreversible steps are skipped.
     The workflow state is set to 'failed' after rollback.
@@ -193,7 +193,7 @@ def rollback(workflow_id: str) -> dict:
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def list_workflows() -> dict:
-    """List all available workflow templates (built-in + custom).
+    """[READ] List all available workflow templates (built-in + custom).
 
     Built-in templates are always available. Custom templates are loaded
     from ~/.vmware/workflows/*.yaml — drop a YAML file there to add
@@ -230,7 +230,7 @@ def create_workflow(
     steps: list[dict[str, Any]],
     save_as_template: bool = False,
 ) -> dict:
-    """Create a custom workflow dynamically from a step list.
+    """[WRITE] Create a custom workflow dynamically from a step list.
 
     Use this when none of the built-in templates match. Describe what you need
     and the AI will design the steps using available skills.
@@ -442,7 +442,7 @@ SKILL_CATALOG = {
 @mcp.tool()
 @vmware_tool(risk_level="low")
 def get_skill_catalog() -> dict:
-    """Get the complete catalog of available skills and tools for workflow design.
+    """[READ] Get the complete catalog of available skills and tools for workflow design.
 
     Use this to understand what building blocks are available when designing
     a custom workflow. Each skill lists its key tools with risk level and description.
@@ -459,7 +459,7 @@ def design_workflow(
     goal: str,
     constraints: str = "",
 ) -> dict:
-    """Start designing a workflow from a natural language description.
+    """[WRITE] Start designing a workflow from a natural language description.
 
     Call this when the user describes a complex operation and you need to
     design a multi-step workflow. Returns a DRAFT workflow with proposed steps
@@ -522,7 +522,7 @@ def update_draft(
     description: str = "",
     steps: list[dict[str, Any]] | None = None,
 ) -> dict:
-    """Update a DRAFT workflow's name, description, or steps.
+    """[WRITE] Update a DRAFT workflow's name, description, or steps.
 
     Call this after design_workflow() to fill in the actual steps,
     or to modify steps based on user feedback.
@@ -588,7 +588,7 @@ def confirm_draft(
     workflow_id: str,
     save_as_template: bool = False,
 ) -> dict:
-    """Confirm a draft workflow — changes state from DRAFT to PENDING.
+    """[WRITE] Confirm a draft workflow — changes state from DRAFT to PENDING.
 
     After confirmation, the workflow can be executed via run_workflow().
     Optionally saves as a YAML template for future reuse.

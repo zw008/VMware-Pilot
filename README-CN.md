@@ -1,5 +1,9 @@
 # VMware Pilot
 
+> **作者**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
+> 本项目由 VMware 工程师维护的社区项目，非 VMware 官方产品。
+> VMware 官方开发者工具请访问 [developer.broadcom.com](https://developer.broadcom.com)。
+
 [English](README.md) | 中文
 
 多步骤工作流编排 — 跨 VMware MCP 技能的状态机、审批门控、审计日志。
