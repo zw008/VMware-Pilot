@@ -17,6 +17,8 @@ compatibility: >
 
 # VMware Pilot
 
+> **Disclaimer**: This is a community-maintained open-source project and is **not affiliated with, endorsed by, or sponsored by VMware, Inc. or Broadcom Inc.** "VMware" is a trademark of Broadcom. Source code is publicly auditable at [github.com/zw008/VMware-Pilot](https://github.com/zw008/VMware-Pilot) under the MIT license.
+
 Multi-step workflow orchestration for VMware MCP skills — design, approve, execute, rollback.
 
 **Companion Skills**: [vmware-aiops](../vmware-aiops/SKILL.md) (VM operations) | [vmware-monitor](../vmware-monitor/SKILL.md) (monitoring) | [vmware-nsx](../vmware-nsx/SKILL.md) (networking) | [vmware-aria](../vmware-aria/SKILL.md) (metrics/alerts) | [vmware-avi](../vmware-avi/SKILL.md) (load balancing/AKO)
