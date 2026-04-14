@@ -1,5 +1,9 @@
 # VMware Pilot — Release Notes
 
+## v1.5.5 (2026-04-15)
+
+- Align with VMware skill family v1.5.5
+
 ## v1.5.4 (2026-04-14)
 
 - Security: bump pytest 9.0.2→9.0.3 (CVE-2025-71176, insecure tmpdir handling)
