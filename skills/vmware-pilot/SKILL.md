@@ -13,6 +13,10 @@ allowed-tools: [Bash]
 metadata: {"openclaw":{"requires":{"env":["VMWARE_PILOT_CONFIG"],"bins":["vmware-pilot-mcp"]},"primaryEnv":"VMWARE_PILOT_CONFIG","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
 compatibility: >
   vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All workflow operations audited to ~/.vmware/audit.db.
+  No direct vCenter/NSX credentials: Pilot is an orchestration layer that delegates to companion skills (aiops, monitor, nsx, etc.) which handle their own auth.
+  Approval gates: Workflows pause for human review before destructive steps. Rollback automatically reverses completed steps on failure.
+  State persistence: SQLite-backed workflow state survives restarts. No webhooks, no outbound network calls.
+  Transitive dependencies: Only vmware-policy (audit/policy). No post-install scripts or background services.
 ---
 
 # VMware Pilot
