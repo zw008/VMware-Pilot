@@ -54,7 +54,7 @@ def _get_executor() -> WorkflowExecutor:
 # ── MCP Tools ─────────────────────────────────────────────────────────
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def plan_workflow(
     workflow_type: str,
@@ -79,28 +79,31 @@ def plan_workflow(
     Returns:
         dict with workflow_id, steps summary, and plan details.
     """
-    templates = get_all_templates()
-    template_fn = templates.get(workflow_type)
-    if not template_fn:
-        return {"error": f"Unknown workflow type: {workflow_type}. Available: {list(templates.keys())}"}
+    try:
+        templates = get_all_templates()
+        template_fn = templates.get(workflow_type)
+        if not template_fn:
+            return {"error": f"Unknown workflow type: {workflow_type}. Available: {list(templates.keys())}"}
 
-    wf = template_fn(**params)
-    _get_store().save(wf)
+        wf = template_fn(**params)
+        _get_store().save(wf)
 
-    return {
-        "workflow_id": wf.id,
-        "workflow_type": wf.workflow_type,
-        "state": wf.state.value,
-        "steps": [
-            {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool}
-            for s in wf.steps
-        ],
-        "params": wf.params,
-        "message": f"Plan created. Call run_workflow('{wf.id}') to execute.",
-    }
+        return {
+            "workflow_id": wf.id,
+            "workflow_type": wf.workflow_type,
+            "state": wf.state.value,
+            "steps": [
+                {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool}
+                for s in wf.steps
+            ],
+            "params": wf.params,
+            "message": f"Plan created. Call run_workflow('{wf.id}') to execute.",
+        }
+    except Exception as e:
+        return {"error": str(e), "hint": "Check workflow_type and params. Use list_workflows() to see available templates."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def run_workflow(workflow_id: str) -> dict:
     """[WRITE] Execute a planned workflow. Pauses at approval gates.
@@ -121,10 +124,13 @@ def run_workflow(workflow_id: str) -> dict:
     if wf.state not in (WorkflowState.PENDING, WorkflowState.RUNNING):
         return {"error": f"Workflow '{workflow_id}' cannot be run (state: {wf.state.value})"}
 
-    return _get_executor().run_until_checkpoint(wf)
+    try:
+        return _get_executor().run_until_checkpoint(wf)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Workflow '{workflow_id}' execution failed. Use get_workflow_status() to check state, or rollback()."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_workflow_status(workflow_id: str) -> dict:
     """[READ] Get current workflow state, diff report, and audit log.
@@ -135,13 +141,16 @@ def get_workflow_status(workflow_id: str) -> dict:
     Returns:
         Full workflow state including steps, audit log, and diff report.
     """
-    wf = _get_store().load(workflow_id)
-    if not wf:
-        return {"error": f"Workflow '{workflow_id}' not found"}
-    return wf.to_dict()
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+        return wf.to_dict()
+    except Exception as e:
+        return {"error": str(e), "hint": "Use list_workflows() to see active workflow IDs."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="high")
 def approve(workflow_id: str, approver: str = "") -> dict:
     """[WRITE] Approve a workflow that is waiting for human confirmation.
@@ -156,14 +165,17 @@ def approve(workflow_id: str, approver: str = "") -> dict:
     Returns:
         Updated workflow state after resuming execution.
     """
-    wf = _get_store().load(workflow_id)
-    if not wf:
-        return {"error": f"Workflow '{workflow_id}' not found"}
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
 
-    return _get_executor().resume_after_approval(wf, approver=approver)
+        return _get_executor().resume_after_approval(wf, approver=approver)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Approval failed for '{workflow_id}'. Use get_workflow_status() to check state."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="high")
 def rollback(workflow_id: str) -> dict:
     """[WRITE] Abort a workflow and rollback completed steps in reverse order.
@@ -177,20 +189,23 @@ def rollback(workflow_id: str) -> dict:
     Returns:
         Rollback results for each step.
     """
-    wf = _get_store().load(workflow_id)
-    if not wf:
-        return {"error": f"Workflow '{workflow_id}' not found"}
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
 
-    if wf.state == WorkflowState.COMPLETED:
-        return {"error": f"Workflow '{workflow_id}' is already completed, cannot rollback"}
+        if wf.state == WorkflowState.COMPLETED:
+            return {"error": f"Workflow '{workflow_id}' is already completed, cannot rollback"}
 
-    return _get_executor().rollback(wf)
+        return _get_executor().rollback(wf)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Rollback failed for '{workflow_id}'. Use get_workflow_status() to check state."}
 
 
 # ── Discovery & Dynamic Creation ──────────────────────────────────────
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def list_workflows() -> dict:
     """[READ] List all available workflow templates (built-in + custom).
@@ -216,13 +231,16 @@ def list_workflows() -> dict:
 
     active = _get_store().list_active()
 
-    return {
-        "templates": builtin + custom,
-        "active_workflows": active,
-    }
+    try:
+        return {
+            "templates": builtin + custom,
+            "active_workflows": active,
+        }
+    except Exception as e:
+        return {"error": str(e), "hint": "Failed to list workflows."}
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def create_workflow(
     name: str,
@@ -305,17 +323,20 @@ def create_workflow(
     if save_as_template:
         _save_as_yaml(name, description, steps)
 
-    return {
-        "workflow_id": wf.id,
-        "workflow_type": name,
-        "state": wf.state.value,
-        "steps": [
-            {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool}
-            for s in wf.steps
-        ],
-        "saved_as_template": save_as_template,
-        "message": f"Custom workflow created. Call run_workflow('{wf.id}') to execute.",
-    }
+    try:
+        return {
+            "workflow_id": wf.id,
+            "workflow_type": name,
+            "state": wf.state.value,
+            "steps": [
+                {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool}
+                for s in wf.steps
+            ],
+            "saved_as_template": save_as_template,
+            "message": f"Custom workflow created. Call run_workflow('{wf.id}') to execute.",
+        }
+    except Exception as e:
+        return {"error": str(e), "hint": "Failed to create workflow. Check step definitions."}
 
 
 def _save_as_yaml(name: str, description: str, steps: list[dict[str, Any]]) -> None:
@@ -439,7 +460,7 @@ SKILL_CATALOG = {
 }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def get_skill_catalog() -> dict:
     """[READ] Get the complete catalog of available skills and tools for workflow design.
@@ -453,7 +474,7 @@ def get_skill_catalog() -> dict:
     return SKILL_CATALOG
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="low")
 def design_workflow(
     goal: str,
@@ -514,7 +535,7 @@ def design_workflow(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def update_draft(
     workflow_id: str,
@@ -582,7 +603,7 @@ def update_draft(
     }
 
 
-@mcp.tool()
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
 def confirm_draft(
     workflow_id: str,
