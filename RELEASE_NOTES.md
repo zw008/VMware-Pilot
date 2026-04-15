@@ -1,5 +1,10 @@
 # VMware Pilot — Release Notes
 
+## v1.5.7 (2026-04-15)
+
+- Fix: `plan_and_approve` workflow template used `__from_step_0__` as a literal placeholder string, causing `vm_apply_plan` to receive an invalid plan_id at execution. Executor now resolves `__from_step_N__` (full result) and `__from_step_N.field__` (nested field) references against completed steps' `result` at dispatch time. Also applied to rollback_params.
+- Align with VMware skill family v1.5.7
+
 ## v1.5.6 (2026-04-15)
 
 - Align with VMware skill family v1.5.6 (AVI bugfixes + packaging hotfix)
