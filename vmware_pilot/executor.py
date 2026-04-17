@@ -101,6 +101,7 @@ class WorkflowExecutor:
         """Rollback completed steps in reverse order."""
         wf.state = WorkflowState.ROLLING_BACK
         wf.log("rollback_started")
+        self._store.save(wf)
 
         rollback_results = []
         for step in reversed(wf.completed_steps()):
@@ -132,6 +133,8 @@ class WorkflowExecutor:
                 })
                 wf.log("rollback_failed", f"Step {step.index}: {step.rollback_tool} → {exc}")
                 # Continue rolling back other steps even if one fails
+
+            self._store.save(wf)
 
         wf.state = WorkflowState.FAILED
         wf.log("rollback_completed")

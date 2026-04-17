@@ -1,5 +1,11 @@
 # VMware Pilot — Release Notes
 
+## v1.5.12 (2026-04-17)
+
+**Bug fix from code review by @yjs-2026**
+
+- **fix:** `rollback()` — persist workflow state after entering ROLLING_BACK and after each rollback step, preventing state inconsistency if process crashes mid-rollback
+
 ## v1.5.11 (2026-04-17)
 
 - Align with VMware skill family v1.5.11 (AVI 22.x fixes from @timwangbc)
