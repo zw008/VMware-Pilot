@@ -52,7 +52,8 @@ class WorkflowExecutor:
             self._store.save(wf)
 
             try:
-                result = self._dispatch(step.skill, step.tool, step.params)
+                resolved_params = self._resolve_step_refs(step.params, wf.steps)
+                result = self._dispatch(step.skill, step.tool, resolved_params)
                 step.status = "success"
                 step.result = result
                 step.completed_at = _now()
@@ -115,7 +116,8 @@ class WorkflowExecutor:
                 continue
 
             try:
-                result = self._dispatch(step.skill, step.rollback_tool, step.rollback_params)
+                resolved_rb = self._resolve_step_refs(step.rollback_params, wf.steps)
+                result = self._dispatch(step.skill, step.rollback_tool, resolved_rb)
                 step.status = "rolled_back"
                 rollback_results.append({
                     "step": step.index,
@@ -151,6 +153,42 @@ class WorkflowExecutor:
         wf.log("blocked_by_policy", reason)
         self._store.save(wf)
         return wf.to_dict()
+
+
+    @staticmethod
+    def _resolve_step_refs(
+        params: dict[str, Any], steps: list,
+    ) -> dict[str, Any]:
+        """Replace ``__from_step_N__:key`` references with actual step results.
+
+        Format: ``"__from_step_0__:plan_id"`` → result of step 0, key ``plan_id``.
+        If the key part is omitted, the entire step result is used.
+        """
+        resolved: dict[str, Any] = {}
+        for k, v in params.items():
+            if isinstance(v, str) and v.startswith("__from_step_") and v.endswith("__"):
+                # Legacy format without key: __from_step_0__
+                try:
+                    idx = int(v[len("__from_step_"):-2])
+                    source = steps[idx]
+                    resolved[k] = source.result if source.result is not None else v
+                except (ValueError, IndexError):
+                    resolved[k] = v
+            elif isinstance(v, str) and v.startswith("__from_step_"):
+                # New format with key: __from_step_0__:plan_id
+                try:
+                    ref_part, result_key = v.split(":", 1)
+                    idx = int(ref_part[len("__from_step_"):-2])
+                    source = steps[idx]
+                    if isinstance(source.result, dict):
+                        resolved[k] = source.result.get(result_key, source.result)
+                    else:
+                        resolved[k] = source.result if source.result is not None else v
+                except (ValueError, IndexError):
+                    resolved[k] = v
+            else:
+                resolved[k] = v
+        return resolved
 
 
 def _now() -> str:

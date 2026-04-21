@@ -57,7 +57,7 @@ def clone_and_test(
             index=1,
             action="apply_changes",
             skill="aiops",
-            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec else "vm_guest_exec",
+            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec else "vm_guest_exec",
             params={"vm_name": staging_name, **change_spec, "target": target},
         ),
         WorkflowStep(
@@ -78,7 +78,7 @@ def clone_and_test(
             index=4,
             action="apply_to_production",
             skill="aiops",
-            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec else "vm_guest_exec",
+            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec else "vm_guest_exec",
             params={"vm_name": target_vm, **change_spec, "target": target},
         ),
         WorkflowStep(
@@ -227,9 +227,9 @@ def plan_and_approve(
             action="apply_plan",
             skill="aiops",
             tool="vm_apply_plan",
-            params={"plan_id": "__from_step_0__", "target": target},
+            params={"plan_id": "__from_step_0__:plan_id", "target": target},
             rollback_tool="vm_rollback_plan",
-            rollback_params={"plan_id": "__from_step_0__", "target": target},
+            rollback_params={"plan_id": "__from_step_0__:plan_id", "target": target},
         ),
     ]
 

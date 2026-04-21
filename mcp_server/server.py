@@ -165,12 +165,15 @@ def approve(workflow_id: str, approver: str = "") -> dict:
     Returns:
         Updated workflow state after resuming execution.
     """
+    if not approver or not approver.strip():
+        return {"error": "approver is required for audit trail. Provide the name of the person approving."}
+
     try:
         wf = _get_store().load(workflow_id)
         if not wf:
             return {"error": f"Workflow '{workflow_id}' not found"}
 
-        return _get_executor().resume_after_approval(wf, approver=approver)
+        return _get_executor().resume_after_approval(wf, approver=approver.strip())
     except Exception as e:
         return {"error": str(e), "hint": f"Approval failed for '{workflow_id}'. Use get_workflow_status() to check state."}
 

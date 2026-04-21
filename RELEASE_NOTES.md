@@ -1,3 +1,11 @@
+## v1.5.13 (2026-04-21)
+
+**Bug fixes from code review 2026-04-20**
+
+- **fix(P0):** `executor.py` — added `_resolve_step_refs()` for step-to-step variable substitution; `plan_and_approve` workflow no longer passes literal `__from_step_0__` as plan_id
+- **fix:** `templates.py` — `clone_and_test` now accepts both `memory_mb` and `memory_gb` in change_spec for reconfigure routing (was only checking `memory_mb` while docstring documented `memory_gb`)
+- **fix:** `server.py` — `approve()` now rejects empty `approver` parameter with clear error message for audit trail integrity
+
 # VMware Pilot — Release Notes
 
 ## v1.5.12 (2026-04-17)
