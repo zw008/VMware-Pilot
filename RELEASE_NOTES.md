@@ -1,3 +1,15 @@
+## v1.5.17 (2026-05-01)
+
+**v2 architecture follow-ups** — implements 4 of 5 additive gaps identified in the v1.5.16 architecture audit (`docs/architecture-audit-2026-04-30.md`).
+
+- **feat:** New `investigate_alert` template — causal-chain root-cause workflow that codifies the four-criteria completeness check (falsifiability/sufficiency/necessity/mechanism) from the EHE investigation protocol. Round 1 parallel-gathers alarms + events + Aria alerts, then pauses for synthesis. Optional `deep_dive=True` adds a second round of broader gathering.
+- **feat:** New `review_workflow` MCP tool — structural sanity check before execution. Detects delete-then-use cycles, ungated destructive operations, placeholder parameters, non-contiguous parallel groups, destructive ops inside parallel groups. Returns `verdict: approved | needs_revision` plus per-finding severity, kind, and message.
+- **feat:** `WorkflowStep.group_id` field + `parallel_group(group_id, steps)` helper — siblings sharing a non-empty group_id may be dispatched concurrently by the calling agent. Backward-compatible deserialization for pre-existing workflows.
+- **docs:** SKILL.md and `references/integration-patterns.md` now document the dispatch contract explicitly: pilot is the dispatcher (plans, state, approval gates), the calling AI agent is the executor (invokes per-step MCP tools).
+- **align:** Family version bump to v1.5.17.
+
+Tests: 75 → 96 passing (4 parallel_group + 7 investigate_alert + 10 review). MCP tools: 11 → 12. Templates: 14 → 15.
+
 ## v1.5.16 (2026-04-30)
 
 **Enterprise Harness Engineering alignment** — adapted from the Linkloud × addxai framework articles ([part 1](https://mp.weixin.qq.com/s/hz4W7ILHJ1yz_pG0Z1xP-A), [part 2](https://mp.weixin.qq.com/s/F3qYbyB3S8oIqx-Y4BrWNQ)).
