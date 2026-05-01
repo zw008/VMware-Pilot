@@ -2,6 +2,7 @@
 
 import pytest
 
+from vmware_pilot.models import WorkflowStep
 from vmware_pilot.templates import (
     BUILTIN_TEMPLATES as TEMPLATES,
     baseline_audit,
@@ -12,7 +13,9 @@ from vmware_pilot.templates import (
     compliance_scan,
     disaster_recovery,
     incident_response,
+    investigate_alert,
     network_segment_setup,
+    parallel_group,
     patch_deployment,
     plan_and_approve,
     rolling_restart,
@@ -359,7 +362,8 @@ class TestBaselineRemediate:
 class TestTemplateRegistry:
     def test_all_templates_registered(self):
         expected = [
-            "clone_and_test", "incident_response", "plan_and_approve", "compliance_scan",
+            "clone_and_test", "incident_response", "investigate_alert",
+            "plan_and_approve", "compliance_scan",
             "network_segment_setup", "vks_cluster_deploy", "rolling_restart",
             "capacity_expansion", "disaster_recovery", "patch_deployment", "storage_expansion",
             "baseline_capture", "baseline_audit", "baseline_remediate",
@@ -372,4 +376,78 @@ class TestTemplateRegistry:
             assert callable(fn)
 
     def test_total_count(self):
-        assert len(TEMPLATES) == 14
+        assert len(TEMPLATES) == 15
+
+
+@pytest.mark.unit
+class TestInvestigateAlert:
+    def test_round1_only_when_no_deep_dive(self):
+        wf = investigate_alert(alert_entity="vm-prod-01", alert_name="High CPU")
+        # 3 gather + 1 checkpoint
+        assert len(wf.steps) == 4
+        assert wf.workflow_type == "investigate_alert"
+
+    def test_round1_steps_share_group_id(self):
+        wf = investigate_alert(alert_entity="vm-prod-01")
+        gather = [s for s in wf.steps if s.action.startswith("gather_")]
+        assert len(gather) == 3
+        assert all(s.group_id == "round1-gather" for s in gather)
+
+    def test_first_checkpoint_mentions_four_criteria(self):
+        wf = investigate_alert(alert_entity="vm-prod-01")
+        approval = [s for s in wf.steps if s.action == "require_approval"][0]
+        msg = approval.params["message"].lower()
+        assert "falsifiability" in msg
+        assert "sufficiency" in msg
+        assert "necessity" in msg
+        assert "mechanism" in msg
+
+    def test_deep_dive_adds_second_round(self):
+        wf = investigate_alert(alert_entity="vm-prod-01", deep_dive=True)
+        # 3 round1 gather + 1 checkpoint + 3 round2 gather + 1 checkpoint
+        assert len(wf.steps) == 8
+        round2 = [s for s in wf.steps if s.group_id == "round2-gather"]
+        assert len(round2) == 3
+        approvals = [s for s in wf.steps if s.action == "require_approval"]
+        assert len(approvals) == 2
+
+    def test_deep_dive_round2_has_distinct_group_id(self):
+        wf = investigate_alert(alert_entity="vm-prod-01", deep_dive=True)
+        groups = {s.group_id for s in wf.steps if s.group_id}
+        assert groups == {"round1-gather", "round2-gather"}
+
+    def test_target_propagates_to_steps(self):
+        wf = investigate_alert(alert_entity="vm-prod-01", target="prod-vc")
+        for s in wf.steps:
+            if s.action.startswith("gather_"):
+                assert s.params.get("target") == "prod-vc"
+
+    def test_state_starts_pending(self):
+        wf = investigate_alert(alert_entity="vm-prod-01")
+        assert wf.state.value == "pending"
+
+
+@pytest.mark.unit
+class TestParallelGroup:
+    def _make_step(self, idx: int, tool: str) -> WorkflowStep:
+        return WorkflowStep(
+            index=idx, action="execute", skill="vmware-monitor",
+            tool=tool, params={},
+        )
+
+    def test_tags_all_steps_with_group_id(self):
+        steps = [self._make_step(0, "list_alarms"), self._make_step(1, "list_events")]
+        result = parallel_group("gather", steps)
+        assert all(s.group_id == "gather" for s in result)
+
+    def test_returns_same_list(self):
+        steps = [self._make_step(0, "list_alarms")]
+        assert parallel_group("g", steps) is steps
+
+    def test_rejects_empty_group_id(self):
+        with pytest.raises(ValueError):
+            parallel_group("", [self._make_step(0, "list_alarms")])
+
+    def test_default_group_id_is_empty(self):
+        s = self._make_step(0, "list_alarms")
+        assert s.group_id == ""

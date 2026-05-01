@@ -40,6 +40,7 @@ class WorkflowStep:
     completed_at: str = ""
     rollback_tool: str = ""
     rollback_params: dict[str, Any] = field(default_factory=dict)
+    group_id: str = ""  # non-empty = parallel-group sibling; agent may dispatch concurrently with peers
 
 
 @dataclass
@@ -167,7 +168,11 @@ class WorkflowStore:
 
 
 def _from_dict(d: dict[str, Any]) -> Workflow:
-    steps = [WorkflowStep(**s) for s in d.get("steps", [])]
+    # Backward compat: older workflows persisted before group_id was added
+    steps = []
+    for s in d.get("steps", []):
+        s.setdefault("group_id", "")
+        steps.append(WorkflowStep(**s))
     return Workflow(
         id=d["id"],
         workflow_type=d["workflow_type"],

@@ -18,6 +18,7 @@ from vmware_policy import vmware_tool
 
 from vmware_pilot.executor import WorkflowExecutor
 from vmware_pilot.models import WorkflowState, WorkflowStore
+from vmware_pilot.review import review as _review_workflow_impl
 from vmware_pilot.templates import get_all_templates
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,38 @@ def run_workflow(workflow_id: str) -> dict:
         return _get_executor().run_until_checkpoint(wf)
     except Exception as e:
         return {"error": str(e), "hint": f"Workflow '{workflow_id}' execution failed. Use get_workflow_status() to check state, or rollback()."}
+
+
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+@vmware_tool(risk_level="low")
+def review_workflow(workflow_id: str) -> dict:
+    """[READ] Sanity-check a planned workflow before execution.
+
+    Performs structural validation only — does NOT call into other skills.
+    Catches the common authoring errors before they hit production:
+
+      - Delete-then-use: a step deletes resource X, a later step references X
+      - Missing required params: a step has empty params or placeholder values
+      - Cross-skill order issues: surfacing the cross-skill dispatch sequence
+      - Risk profile: count of destructive vs. read-only steps
+      - Approval coverage: are all destructive ops gated behind a require_approval?
+
+    Args:
+        workflow_id: The workflow ID returned by ``plan_workflow``.
+
+    Returns:
+        Dict with keys:
+          - ``verdict``: ``"approved"`` if no structural issues, otherwise ``"needs_revision"``
+          - ``findings``: list of {severity, kind, message, step_index}
+          - ``summary``: counts (steps, gather/destructive/approval), groups, est_duration_min
+    """
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+        return _review_workflow_impl(wf)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Review failed for '{workflow_id}'. Use get_workflow_status() to inspect raw state."}
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})

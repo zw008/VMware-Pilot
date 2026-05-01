@@ -6,6 +6,41 @@ Pilot vs. calling a skill directly.
 
 ---
 
+## The Dispatch Contract
+
+Pilot is a **Dispatcher**, not an **Executor**. This is a deliberate v2-style architecture (per the Enterprise Harness Engineering framework — see `docs/architecture-audit-2026-04-30.md`).
+
+The contract:
+
+1. **Pilot generates a plan** via `plan_workflow` or `design_workflow`. The plan is a sequence of `(skill, tool, params)` tuples plus approval gates and rollback metadata. State is persisted to SQLite.
+2. **Pilot tracks state** via `run_workflow`, `approve`, `rollback`. Each call returns immediately on the next checkpoint — running, awaiting approval, completed, or failed.
+3. **The calling AI agent dispatches each step**. After `run_workflow` returns a step description, the agent invokes the corresponding MCP tool on the target skill (e.g., `vmware-aiops::vm_clone`), captures the result, and reports back to pilot via the next state transition.
+
+In other words: pilot is the brain, the AI agent is the hands. Pilot never reaches across the wire to call other skills' tools itself — its `dispatch` function defaults to a no-op.
+
+### Why this matters
+
+- **Context isolation**: each step runs in the agent's main loop, not inside pilot. Pilot's context stays small (~100 lines/turn).
+- **No persistent agents**: there is no long-running pilot process that holds state in memory. State is always on disk.
+- **Approval gates as state, not blocking calls**: when a workflow hits `require_approval`, pilot persists the state and returns. Resumption is a new MCP call (`approve`), not an unblocking signal to a paused thread.
+- **Rollback is an explicit operation**: it doesn't happen automatically on agent crash or context loss. The user (or agent) must call `rollback` deliberately.
+
+### What this means for agents using pilot
+
+| Agent action | Correct pilot interaction |
+|---|---|
+| Start a multi-step task | Call `plan_workflow`; read returned plan; show to user |
+| Execute the plan | Call `run_workflow`; for each pending step in the response, invoke the named skill+tool yourself; report progress to the user |
+| Hit an approval gate | Tell the user; wait for explicit approval; call `approve` |
+| Encounter a failure | Surface the error; ask the user whether to `rollback` |
+| Need to know workflow state mid-execution | Call `get_workflow_status` (idempotent, safe) |
+
+### What this means for skill authors
+
+If you add a new template to pilot, your template's steps must reference (`skill`, `tool`) pairs that already exist on companion skills. Pilot does no validation of tool existence at plan time — that's the agent's job at dispatch time. To help agents catch typos early, consider adding a `--validate` flag to template authoring tools.
+
+---
+
 ## Pattern 1: Monitor -> Diagnose -> Fix
 
 Detect a problem, gather context, then remediate with approval.

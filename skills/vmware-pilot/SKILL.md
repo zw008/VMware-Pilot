@@ -3,8 +3,8 @@ name: vmware-pilot
 description: >
   Use this skill whenever the user wants to design, execute, or manage complex multi-step VMware workflows with human approval and automatic rollback.
   Pilot is the orchestration brain — it breaks down a user's goal into steps across multiple VMware skills (aiops, monitor, nsx, aria, vks, storage, avi), adds approval gates before destructive operations, and rolls back automatically if anything fails.
-  Always use vmware-pilot for: "clone and test before applying to production", "VMware incident response with checkpoints", "set up VMware infrastructure using multiple skills", "VMware rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", "AKO-aware app deployment", or any VMware workflow needing approval gates or rollback.
-  14 built-in templates + custom YAML + AI-designed workflows from 185 available tools across 8 skills.
+  Always use vmware-pilot for: "clone and test before applying to production", "VMware incident response with checkpoints", "investigate alert root cause", "set up VMware infrastructure using multiple skills", "VMware rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", "AKO-aware app deployment", or any VMware workflow needing approval gates or rollback.
+  15 built-in templates + custom YAML + AI-designed workflows from 185 available tools across 8 skills.
   For single VM operations use vmware-aiops, for read-only queries use vmware-monitor, for load balancer operations use vmware-avi.
 installer:
   kind: uv
@@ -139,7 +139,13 @@ Deploy a backend VM, create a K8s namespace, and wire up AKO Ingress to the AVI 
 5. vmware-avi ako sync status                   # verify VS created on AVI Controller
 ```
 
-## MCP Tools (11 — 3 read, 8 write/control)
+## Dispatch Contract (Important)
+
+**Pilot is a Dispatcher, not an Executor.** It generates plans, tracks state, gates on approvals — it does NOT call companion skills' MCP tools itself. The calling AI agent is responsible for invoking `vmware-aiops::vm_clone` etc. when pilot's `run_workflow` returns a step description.
+
+This is intentional v2-style architecture: pilot's context stays small, state is always on disk, and there are no persistent agent threads. Full contract details: see [`references/integration-patterns.md`](references/integration-patterns.md#the-dispatch-contract).
+
+## MCP Tools (12 — 4 read, 8 write/control)
 
 | Category | Tool | Risk | Description |
 |---|---|---|---|
@@ -150,19 +156,25 @@ Deploy a backend VM, create a K8s namespace, and wire up AKO Ingress to the AVI 
 | | `confirm_draft` | medium | Finalize draft → ready to execute |
 | **Execute** | `plan_workflow` | medium | Create from template |
 | | `create_workflow` | medium | One-step custom creation |
-| | `run_workflow` | medium | Execute (pauses at approval) |
+| | `review_workflow` | low | Structural sanity check before execution (approved \| needs_revision) |
+| | `run_workflow` | medium | Execute next checkpoint (agent dispatches each step) |
 | **Control** | `approve` | high | Human approval to continue |
 | | `rollback` | high | Reverse completed steps |
 | | `get_workflow_status` | low | State + audit log |
 
-## Built-in Templates (4)
+## Built-in Templates (15)
+
+The five most-used:
 
 | Template | Steps | Approval | Skills Used |
 |---|---|---|---|
 | `clone_and_test` | 6 | Yes | aiops + monitor |
 | `incident_response` | 4 | Yes | monitor + aiops |
+| `investigate_alert` | 4 / 8 | Yes | monitor + aria (parallel-group gather + 4-criteria checkpoint, optional `deep_dive`) |
 | `plan_and_approve` | 3 | Yes | aiops |
 | `compliance_scan` | 3 | No | monitor + aria |
+
+Full list: `clone_and_test`, `incident_response`, `investigate_alert`, `plan_and_approve`, `compliance_scan`, `network_segment_setup`, `vks_cluster_deploy`, `rolling_restart`, `capacity_expansion`, `disaster_recovery`, `patch_deployment`, `storage_expansion`, `baseline_capture`, `baseline_audit`, `baseline_remediate`. See `references/templates.md` for full details.
 
 ## Custom Templates
 
