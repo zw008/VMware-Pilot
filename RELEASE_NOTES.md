@@ -1,3 +1,10 @@
+## v1.5.16 (2026-04-30)
+
+**Enterprise Harness Engineering alignment** — adapted from the Linkloud × addxai framework articles ([part 1](https://mp.weixin.qq.com/s/hz4W7ILHJ1yz_pG0Z1xP-A), [part 2](https://mp.weixin.qq.com/s/F3qYbyB3S8oIqx-Y4BrWNQ)).
+
+- **docs:** New `docs/architecture-audit-2026-04-30.md` — verifies pilot already follows the v2 Dispatcher + one-shot subagent pattern from EHE; identifies 5 additive gaps tracked as separate work items (G1-G5: investigate template, review gate, parallel step, L5 hooks, dispatch contract docs).
+- **align:** Family version bump 1.5.14 → 1.5.16 (skipping 1.5.15 to align with the rest of the family).
+
 ## v1.5.14 (2026-04-21)
 
 - Align with VMware skill family v1.5.14 (code review follow-up fixes by @yjs-2026)
