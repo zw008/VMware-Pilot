@@ -1,3 +1,10 @@
+## v1.5.19 (2026-05-06)
+
+**Family alignment** — no source changes in this orchestration skill.
+
+- **align:** Catching up to family v1.5.19 (was at v1.5.17). Tracks fixes in vmware-nsx (CRITICAL CLI imports), vmware-vks (ApiClient leak), vmware-harden (Twin indexes + LEFT JOIN report), vmware-policy (approval gate AND→OR + singleton lock). yjs review 2026-05-06.
+- **smoke:** Family `scripts/family_smoke.sh` adds Check 3b — recursive `--help` on every subcommand to surface broken lazy imports (CLAUDE.md 踩坑 #27).
+
 ## v1.5.17 (2026-05-01)
 
 **v2 architecture follow-ups** — implements 4 of 5 additive gaps identified in the v1.5.16 architecture audit (`docs/architecture-audit-2026-04-30.md`).
