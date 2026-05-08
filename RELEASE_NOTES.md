@@ -1,3 +1,10 @@
+## v1.5.21 (2026-05-08)
+
+**Family alignment** — no source changes in this skill. Skipped v1.5.20 family bump; this is the catch-up release.
+
+- **deps:** Bumped `python-multipart` 0.0.26 → 0.0.27 (transitive, fixes GHSA HIGH DoS via unbounded multipart headers).
+- **align:** Tracks family v1.5.20 + v1.5.21 alignment.
+
 ## v1.5.19 (2026-05-06)
 
 **Family alignment** — no source changes in this orchestration skill.
