@@ -1,0 +1,15 @@
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      config_path:
+        type: string
+        description: "Path to vmware-pilot config.yaml (default: ~/.vmware-pilot/config.yaml)"
+    required: []
+  commandFunction: |
+    (config) => ({
+      command: "python",
+      args: ["-m", "mcp_server"],
+      env: config.config_path ? { VMWARE_PILOT_CONFIG: config.config_path } : {}
+    })
