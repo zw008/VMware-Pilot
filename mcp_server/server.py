@@ -377,11 +377,24 @@ def create_workflow(
 
 def _save_as_yaml(name: str, description: str, steps: list[dict[str, Any]]) -> None:
     """Save a dynamic workflow as YAML for future reuse."""
+    import os
     import yaml
     from pathlib import Path
 
+    # ``name`` is user-supplied and becomes a filename — reject traversal so a
+    # template cannot be written outside the workflows dir.
+    if not name or "/" in name or "\\" in name or name.startswith(".") or "\x00" in name:
+        raise ValueError(
+            f"Invalid workflow name {name!r}: no path separators, leading dots, "
+            "or null bytes"
+        )
+
     workflows_dir = Path("~/.vmware/workflows").expanduser()
-    workflows_dir.mkdir(parents=True, exist_ok=True)
+    workflows_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        os.chmod(workflows_dir, 0o700)
+    except OSError:
+        pass
 
     spec = {
         "name": name,

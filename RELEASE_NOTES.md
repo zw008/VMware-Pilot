@@ -1,3 +1,14 @@
+## v1.5.35 (2026-06-10) — security hardening: don't persist secrets; lock down state
+
+### Fixed
+- **Workflow params are redacted before SQLite persistence** — passwords/tokens stay
+  in memory for the running workflow but are never written to `~/.vmware/workflows.db`.
+- **State storage** dir is 0700 and the DB (incl. WAL/SHM) is 0600.
+- **Custom-workflow `name`** is validated against path traversal before becoming a
+  filename; the workflows dir is created 0700.
+
+This release aligns the whole family back to a single version (1.5.35); vmware-policy and vmware-pilot return to the shared number after sitting at 1.5.22.
+
 ## v1.5.22 (2026-05-08)
 
 **Smithery onboarding** — `vmware-pilot` is now installable via Smithery.

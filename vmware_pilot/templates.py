@@ -621,7 +621,7 @@ def patch_deployment(
     patch_guest_path: str,
     install_command: str,
     username: str = "root",
-    password: str = "",
+    password: str = "",  # nosec B107 — empty default; caller supplies the value
     target: str = "",
 ) -> Workflow:
     """Rolling patch deployment: upload → install → verify, one VM at a time.

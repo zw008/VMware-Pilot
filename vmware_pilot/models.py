@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -100,27 +101,75 @@ CREATE TABLE IF NOT EXISTS workflows (
 """
 
 
+# Parameter keys whose values must never be written to the state DB.
+_SENSITIVE_KEYS = frozenset({
+    "password", "passwd", "pwd", "token", "secret", "api_key", "apikey",
+    "authorization", "bearer", "private_key", "credential", "credentials",
+})
+
+
+def _redact_for_persistence(obj: Any) -> Any:
+    """Deep-copy ``obj`` with sensitive dict keys masked to '***'.
+
+    Recurses through dicts and lists so secrets nested in step params are
+    caught too. Non-container values are returned unchanged.
+    """
+    if isinstance(obj, dict):
+        return {
+            k: ("***" if isinstance(k, str) and k.lower() in _SENSITIVE_KEYS
+                else _redact_for_persistence(v))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_redact_for_persistence(item) for item in obj]
+    return obj
+
+
 class WorkflowStore:
     """Persist workflows to SQLite (separate from audit.db)."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self._path = Path(db_path).expanduser() if db_path else _DEFAULT_DB
-        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         conn = self._connect()
         conn.execute(_CREATE_TABLE)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.commit()
         conn.close()
+        self._harden_permissions()
+
+    def _harden_permissions(self) -> None:
+        """Restrict the state dir to 0700 and DB files (incl. WAL/SHM) to 0600.
+
+        Workflow params are persisted here and can contain sensitive values, so
+        keep them owner-only. Best-effort: never raises."""
+        try:
+            os.chmod(self._path.parent, 0o700)
+        except OSError:
+            pass
+        for suffix in ("", "-wal", "-shm"):
+            candidate = self._path.with_name(self._path.name + suffix)
+            try:
+                if candidate.exists():
+                    os.chmod(candidate, 0o600)
+            except OSError:
+                pass
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(str(self._path), timeout=5)
 
     def save(self, wf: Workflow) -> None:
         conn = self._connect()
+        # Redact secrets BEFORE persisting: workflow/step params may carry
+        # passwords/tokens that a caller passed in. They stay in the in-memory
+        # Workflow object (downstream steps still work this run); the DB never
+        # stores them. After a crash, secrets are re-sourced from env/secret
+        # store, not recovered from disk.
+        data = json.dumps(_redact_for_persistence(wf.to_dict()), default=str)
         conn.execute(
             "INSERT OR REPLACE INTO workflows (id, type, state, data, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
-            (wf.id, wf.workflow_type, wf.state.value, json.dumps(wf.to_dict(), default=str),
+            (wf.id, wf.workflow_type, wf.state.value, data,
              wf.created_at, wf.updated_at),
         )
         conn.commit()
