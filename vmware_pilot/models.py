@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import uuid
+from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -57,6 +58,7 @@ class Workflow:
     diff_report: dict[str, Any] = field(default_factory=dict)
     audit_log: list[dict[str, Any]] = field(default_factory=list)
     blocked_reason: str = ""
+    rollback_results: list[dict[str, Any]] = field(default_factory=list)
 
     def log(self, action: str, detail: str = "") -> None:
         self.audit_log.append({
@@ -108,6 +110,19 @@ _SENSITIVE_KEYS = frozenset({
 })
 
 
+# Placeholder written to the DB in place of a redacted secret value.
+REDACTED_PLACEHOLDER = "***"
+
+
+def is_sensitive_key(key: Any) -> bool:
+    """True if ``key`` names a value that must never be persisted in clear.
+
+    Shared by the persistence redaction and the executor's dispatch guard so
+    both use the exact same notion of "sensitive" (case-insensitive match
+    against ``_SENSITIVE_KEYS``)."""
+    return isinstance(key, str) and key.lower() in _SENSITIVE_KEYS
+
+
 def _redact_for_persistence(obj: Any) -> Any:
     """Deep-copy ``obj`` with sensitive dict keys masked to '***'.
 
@@ -116,7 +131,7 @@ def _redact_for_persistence(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         return {
-            k: ("***" if isinstance(k, str) and k.lower() in _SENSITIVE_KEYS
+            k: (REDACTED_PLACEHOLDER if is_sensitive_key(k)
                 else _redact_for_persistence(v))
             for k, v in obj.items()
         }
@@ -126,16 +141,23 @@ def _redact_for_persistence(obj: Any) -> Any:
 
 
 class WorkflowStore:
-    """Persist workflows to SQLite (separate from audit.db)."""
+    """Persist workflows to SQLite (separate from audit.db).
+
+    A per-process in-memory cache keeps the LIVE ``Workflow`` objects so that
+    secrets in params survive a save→load round-trip within the same process
+    (the DB copy is redacted to '***'). Secrets do NOT survive a process
+    restart: after a crash, ``load()`` falls back to the redacted DB row and
+    secrets must be re-sourced from env / a secret store.
+    """
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self._path = Path(db_path).expanduser() if db_path else _DEFAULT_DB
         self._path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        conn = self._connect()
-        conn.execute(_CREATE_TABLE)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.commit()
-        conn.close()
+        self._cache: dict[str, Workflow] = {}
+        with closing(self._connect()) as conn:
+            conn.execute(_CREATE_TABLE)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.commit()
         self._harden_permissions()
 
     def _harden_permissions(self) -> None:
@@ -159,61 +181,64 @@ class WorkflowStore:
         return sqlite3.connect(str(self._path), timeout=5)
 
     def save(self, wf: Workflow) -> None:
-        conn = self._connect()
         # Redact secrets BEFORE persisting: workflow/step params may carry
         # passwords/tokens that a caller passed in. They stay in the in-memory
-        # Workflow object (downstream steps still work this run); the DB never
+        # Workflow object (the per-process cache below — downstream steps and
+        # run/approve in the same process see the real values); the DB never
         # stores them. After a crash, secrets are re-sourced from env/secret
         # store, not recovered from disk.
         data = json.dumps(_redact_for_persistence(wf.to_dict()), default=str)
-        conn.execute(
-            "INSERT OR REPLACE INTO workflows (id, type, state, data, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (wf.id, wf.workflow_type, wf.state.value, data,
-             wf.created_at, wf.updated_at),
-        )
-        conn.commit()
-        conn.close()
+        with closing(self._connect()) as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO workflows (id, type, state, data, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (wf.id, wf.workflow_type, wf.state.value, data,
+                 wf.created_at, wf.updated_at),
+            )
+            conn.commit()
+        # Cache the live object so a load() in this process returns the
+        # unredacted workflow (DB load happens only on cache miss).
+        self._cache[wf.id] = wf
 
     def load(self, workflow_id: str) -> Workflow | None:
-        conn = self._connect()
-        row = conn.execute(
-            "SELECT data FROM workflows WHERE id = ?", (workflow_id,)
-        ).fetchone()
-        conn.close()
+        cached = self._cache.get(workflow_id)
+        if cached is not None:
+            return cached
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT data FROM workflows WHERE id = ?", (workflow_id,)
+            ).fetchone()
         if not row:
             return None
         return _from_dict(json.loads(row[0]))
 
     def list_active(self) -> list[dict[str, Any]]:
-        conn = self._connect()
-        rows = conn.execute(
-            "SELECT id, type, state, created_at, updated_at FROM workflows "
-            "WHERE state NOT IN ('completed', 'failed') ORDER BY created_at DESC"
-        ).fetchall()
-        conn.close()
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT id, type, state, created_at, updated_at FROM workflows "
+                "WHERE state NOT IN ('completed', 'failed') ORDER BY created_at DESC"
+            ).fetchall()
         return [
             {"id": r[0], "type": r[1], "state": r[2], "created_at": r[3], "updated_at": r[4]}
             for r in rows
         ]
 
     def list_all(self, limit: int = 20) -> list[dict[str, Any]]:
-        conn = self._connect()
-        rows = conn.execute(
-            "SELECT id, type, state, created_at, updated_at FROM workflows "
-            "ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
-        conn.close()
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT id, type, state, created_at, updated_at FROM workflows "
+                "ORDER BY created_at DESC LIMIT ?", (limit,)
+            ).fetchall()
         return [
             {"id": r[0], "type": r[1], "state": r[2], "created_at": r[3], "updated_at": r[4]}
             for r in rows
         ]
 
     def delete(self, workflow_id: str) -> None:
-        conn = self._connect()
-        conn.execute("DELETE FROM workflows WHERE id = ?", (workflow_id,))
-        conn.commit()
-        conn.close()
+        self._cache.pop(workflow_id, None)
+        with closing(self._connect()) as conn:
+            conn.execute("DELETE FROM workflows WHERE id = ?", (workflow_id,))
+            conn.commit()
 
 
 def _from_dict(d: dict[str, Any]) -> Workflow:
@@ -234,4 +259,5 @@ def _from_dict(d: dict[str, Any]) -> Workflow:
         diff_report=d.get("diff_report", {}),
         audit_log=d.get("audit_log", []),
         blocked_reason=d.get("blocked_reason", ""),
+        rollback_results=d.get("rollback_results", []),
     )

@@ -451,3 +451,35 @@ class TestParallelGroup:
     def test_default_group_id_is_empty(self):
         s = self._make_step(0, "list_alarms")
         assert s.group_id == ""
+
+
+@pytest.mark.unit
+def test_custom_template_shadowing_builtin_warns(monkeypatch, caplog):
+    """Fix #10: a custom YAML overriding a built-in must warn loudly."""
+    import logging
+
+    from vmware_pilot import custom_loader, templates
+
+    def _fake_custom():
+        return {"clone_and_test": lambda **kw: None, "my_custom": lambda **kw: None}
+
+    monkeypatch.setattr(custom_loader, "load_custom_templates", _fake_custom)
+    with caplog.at_level(logging.WARNING, logger="vmware-pilot.templates"):
+        all_templates = templates.get_all_templates()
+
+    assert "clone_and_test" in all_templates
+    assert "my_custom" in all_templates
+    assert any("shadows built-in" in r.message for r in caplog.records)
+
+
+@pytest.mark.unit
+def test_no_shadow_no_warning(monkeypatch, caplog):
+    import logging
+
+    from vmware_pilot import custom_loader, templates
+
+    monkeypatch.setattr(custom_loader, "load_custom_templates",
+                        lambda: {"my_custom": lambda **kw: None})
+    with caplog.at_level(logging.WARNING, logger="vmware-pilot.templates"):
+        templates.get_all_templates()
+    assert not [r for r in caplog.records if "shadows built-in" in r.message]

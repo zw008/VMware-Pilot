@@ -95,3 +95,54 @@ class TestWorkflowStore:
         self.store.save(wf)
         self.store.delete("wf-del")
         assert self.store.load("wf-del") is None
+
+
+@pytest.mark.unit
+class TestSecretCacheLifecycle:
+    """Fix #3: live cache keeps real secrets in-process; DB stays redacted."""
+
+    def _wf_with_secret(self):
+        return Workflow(
+            id="wf-sec", workflow_type="test", state=WorkflowState.PENDING,
+            steps=[WorkflowStep(index=0, action="a", skill="aiops", tool="vm_guest_exec",
+                                params={"vm": "db01", "password": "s3cr3t!"})],
+            params={"token": "tok-abc"}, created_at="", updated_at="",
+        )
+
+    def test_save_then_load_same_process_keeps_real_secrets(self, tmp_path):
+        store = WorkflowStore(tmp_path / "wf.db")
+        wf = self._wf_with_secret()
+        store.save(wf)
+        loaded = store.load("wf-sec")
+        # Cache hit: the LIVE object, secrets intact for dispatch.
+        assert loaded is wf
+        assert loaded.steps[0].params["password"] == "s3cr3t!"
+        assert loaded.params["token"] == "tok-abc"
+
+    def test_db_row_is_redacted(self, tmp_path):
+        import json
+        import sqlite3
+        store = WorkflowStore(tmp_path / "wf.db")
+        store.save(self._wf_with_secret())
+        conn = sqlite3.connect(str(tmp_path / "wf.db"))
+        raw = conn.execute("SELECT data FROM workflows WHERE id='wf-sec'").fetchone()[0]
+        conn.close()
+        assert "s3cr3t!" not in raw
+        assert "tok-abc" not in raw
+        data = json.loads(raw)
+        assert data["steps"][0]["params"]["password"] == "***"
+        assert data["params"]["token"] == "***"
+
+    def test_secrets_do_not_survive_process_restart(self, tmp_path):
+        store = WorkflowStore(tmp_path / "wf.db")
+        store.save(self._wf_with_secret())
+        # Fresh store == new process: cache miss → redacted DB copy.
+        fresh = WorkflowStore(tmp_path / "wf.db")
+        loaded = fresh.load("wf-sec")
+        assert loaded.steps[0].params["password"] == "***"
+
+    def test_delete_evicts_cache(self, tmp_path):
+        store = WorkflowStore(tmp_path / "wf.db")
+        store.save(self._wf_with_secret())
+        store.delete("wf-sec")
+        assert store.load("wf-sec") is None

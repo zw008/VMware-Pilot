@@ -1,3 +1,18 @@
+## v1.5.36 (2026-06-12) — never report work that wasn't performed
+
+### Fixed
+- **No-op "completed" workflows eliminated** — with no real dispatcher wired, the executor recorded
+  every step as success and marked the workflow COMPLETED. Steps are now `not_executed` and the run
+  finishes `dispatch_required` with a pending-step list; `COMPLETED` requires genuine execution.
+- **Redacted secrets can't be silently dispatched** — a workflow resumed in a fresh process loaded
+  `***` placeholders; dispatch now halts with a teaching error telling the operator to re-source them.
+- **Crash-resume no longer skips an in-flight step as done** — a `running` step on resume is marked
+  `interrupted` and the run halts with a verify-then-retry/rollback message.
+- **Approval gating is now enforced** (not advisory) — ungated destructive workflows are refused
+  unless `force=True` (audited).
+- Step-ref resolution raises on invalid/forward refs instead of passing a literal placeholder;
+  rollback outcomes are persisted; illegal state transitions rejected.
+
 ## v1.5.35 (2026-06-10) — security hardening: don't persist secrets; lock down state
 
 ### Fixed

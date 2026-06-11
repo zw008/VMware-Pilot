@@ -1143,11 +1143,22 @@ def get_all_templates() -> dict[str, Any]:
     Custom templates from ~/.vmware/workflows/*.yaml are loaded on each call
     (supports hot-reload — drop a YAML, immediately available).
     """
+    import logging
+
     from vmware_pilot.custom_loader import load_custom_templates
 
     all_templates = dict(BUILTIN_TEMPLATES)
     custom = load_custom_templates()
-    # Custom templates can override built-ins (user takes precedence)
+    # Custom templates can override built-ins (user takes precedence) — but
+    # warn loudly so a stray YAML cannot silently replace a vetted built-in.
+    shadowed = sorted(set(custom) & set(BUILTIN_TEMPLATES))
+    if shadowed:
+        logging.getLogger("vmware-pilot.templates").warning(
+            "Custom workflow YAML shadows built-in template(s) %s — the "
+            "custom version in ~/.vmware/workflows/ takes precedence. "
+            "Rename the YAML file(s) if this is unintentional.",
+            ", ".join(shadowed),
+        )
     all_templates.update(custom)
     return all_templates
 

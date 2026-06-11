@@ -2,6 +2,14 @@
 
 The executor does NOT call VMware APIs directly. It delegates to skill MCP tools
 via a pluggable dispatch interface. This keeps pilot decoupled from any specific skill.
+
+IMPORTANT — dispatch honesty: when no dispatch function is configured (the
+default for the MCP server, which has no way to call sibling skills itself),
+the executor does NOT pretend to execute steps. Executable steps are recorded
+as ``status="not_executed"`` and the run finishes with
+``outcome="dispatch_required"`` (state stays ``pending``), listing each pending
+step's skill/tool/params so the calling agent can perform them and never with
+state ``completed``.
 """
 
 from __future__ import annotations
@@ -10,7 +18,14 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from vmware_pilot.models import Workflow, WorkflowState, WorkflowStore
+from vmware_pilot.models import (
+    REDACTED_PLACEHOLDER,
+    Workflow,
+    WorkflowState,
+    WorkflowStep,
+    WorkflowStore,
+    is_sensitive_key,
+)
 
 _log = logging.getLogger("vmware-pilot.executor")
 
@@ -18,25 +33,92 @@ _log = logging.getLogger("vmware-pilot.executor")
 # Type for the dispatch function: (skill, tool, params) → result
 DispatchFn = Callable[[str, str, dict[str, Any]], Any]
 
+_NO_DISPATCH_REASON = (
+    "No dispatch function is configured — vmware-pilot cannot invoke other "
+    "skills' MCP tools itself. The step was recorded but NOT executed. "
+    "The calling agent must perform this skill/tool call with the listed "
+    "params, or an embedder must construct WorkflowExecutor with a real "
+    "dispatch callable."
+)
+
+# States from which run_until_checkpoint may legally start.
+_RUNNABLE_STATES = (
+    WorkflowState.PENDING,
+    WorkflowState.RUNNING,
+    WorkflowState.AWAITING_APPROVAL,
+)
+
+# States from which rollback may legally start.
+_ROLLBACK_FORBIDDEN_STATES = (
+    WorkflowState.DRAFT,
+    WorkflowState.COMPLETED,
+    WorkflowState.ROLLING_BACK,
+)
+
 
 class WorkflowExecutor:
     """Execute workflow steps sequentially, pausing at approval gates."""
 
     def __init__(self, store: WorkflowStore, dispatch: DispatchFn | None = None) -> None:
         self._store = store
-        self._dispatch = dispatch or _noop_dispatch
+        self._has_dispatch = dispatch is not None
+        self._dispatch = dispatch if dispatch is not None else _noop_dispatch
 
     def run_until_checkpoint(self, wf: Workflow) -> dict[str, Any]:
         """Execute steps until an approval gate or completion.
 
-        Returns the current workflow state as a dict.
+        Returns the current workflow state as a dict. The dict carries an
+        ``outcome`` key: ``completed`` | ``awaiting_approval`` |
+        ``dispatch_required`` | ``failed``.
         """
+        # ── Transition guard: embedders cannot skip gates ─────────────
+        if wf.state not in _RUNNABLE_STATES:
+            allowed = ", ".join(s.value for s in _RUNNABLE_STATES)
+            return {
+                "error": (
+                    f"Workflow '{wf.id}' cannot be run from state "
+                    f"'{wf.state.value}'. Allowed start states: {allowed}. "
+                    "Drafts must be confirmed first (confirm_draft); "
+                    "completed/failed workflows cannot be re-run — create a "
+                    "new plan instead."
+                ),
+                "workflow_id": wf.id,
+                "state": wf.state.value,
+            }
+
+        # ── Crash-resume safety: a step stuck in "running" means a previous
+        # process died mid-dispatch. Its side effects are UNKNOWN — never
+        # skip it as if done, and never blindly re-execute it.
+        for step in wf.steps:
+            if step.status == "running":
+                step.status = "interrupted"
+                step.completed_at = _now()
+                wf.state = WorkflowState.FAILED
+                wf.log(
+                    "interrupted_step_detected",
+                    f"Step {step.index}: {step.tool} was 'running' when a "
+                    "previous run died",
+                )
+                self._store.save(wf)
+                result = wf.to_dict()
+                result["outcome"] = "failed"
+                result["error"] = (
+                    f"Step {step.index} ({step.skill}.{step.tool}) was "
+                    "interrupted mid-execution by a previous crash. Its side "
+                    "effects are unknown — verify the target system state "
+                    "manually, then either rollback() this workflow or create "
+                    "a new plan that retries from a verified state."
+                )
+                return result
+
         wf.state = WorkflowState.RUNNING
         wf.log("run_started")
         self._store.save(wf)
 
         for step in wf.steps:
-            if step.status != "pending":
+            # "not_executed" steps (recorded by a previous dispatch-less run)
+            # are still pending work and may be retried once dispatch exists.
+            if step.status not in ("pending", "not_executed"):
                 continue
 
             # Check if this step requires approval
@@ -44,7 +126,18 @@ class WorkflowExecutor:
                 wf.state = WorkflowState.AWAITING_APPROVAL
                 wf.log("awaiting_approval", f"Step {step.index}: {step.action}")
                 self._store.save(wf)
-                return wf.to_dict()
+                return self._finish(wf, "awaiting_approval")
+
+            # No dispatcher → record honestly, never fake success.
+            if not self._has_dispatch:
+                step.status = "not_executed"
+                step.result = {"reason": _NO_DISPATCH_REASON}
+                wf.log(
+                    "step_not_executed",
+                    f"Step {step.index}: {step.tool} — no dispatch configured",
+                )
+                self._store.save(wf)
+                continue
 
             # Execute the step
             step.status = "running"
@@ -52,7 +145,24 @@ class WorkflowExecutor:
             self._store.save(wf)
 
             try:
-                resolved_params = self._resolve_step_refs(step.params, wf.steps)
+                resolved_params = self._resolve_step_refs(
+                    step.params, wf.steps, current_index=step.index
+                )
+                # ── Redacted-secret guard ─────────────────────────────
+                # Secrets are masked to '***' in the DB and only the
+                # per-process live cache holds real values. If this workflow
+                # was loaded in a FRESH process (crash/restart) the resolved
+                # params carry the placeholder — refuse to dispatch it rather
+                # than silently sending password='***' to a sibling skill.
+                redacted_key = _first_redacted_sensitive_key(resolved_params)
+                if redacted_key is not None:
+                    raise ValueError(
+                        f"Step {step.index} param '{redacted_key}' is the "
+                        f"redacted placeholder '{REDACTED_PLACEHOLDER}' — "
+                        "secrets do not survive a process restart; re-source "
+                        "it (from env/secret store) before re-running this "
+                        "workflow."
+                    )
                 result = self._dispatch(step.skill, step.tool, resolved_params)
                 step.status = "success"
                 step.result = result
@@ -71,18 +181,63 @@ class WorkflowExecutor:
                         remaining.status = "skipped"
 
                 self._store.save(wf)
-                return wf.to_dict()
+                return self._finish(wf, "failed")
 
-        # All steps completed
+        # All steps walked. If any were only recorded (no dispatch), the
+        # workflow is NOT complete — work remains for the calling agent.
+        if any(s.status == "not_executed" for s in wf.steps):
+            wf.state = WorkflowState.PENDING
+            wf.log(
+                "dispatch_required",
+                f"{sum(1 for s in wf.steps if s.status == 'not_executed')} "
+                "step(s) recorded but not executed (no dispatch configured)",
+            )
+            self._store.save(wf)
+            return self._finish(wf, "dispatch_required")
+
+        # All steps genuinely completed
         wf.state = WorkflowState.COMPLETED
         wf.log("workflow_completed")
         self._store.save(wf)
-        return wf.to_dict()
+        return self._finish(wf, "completed")
+
+    def _finish(self, wf: Workflow, outcome: str) -> dict[str, Any]:
+        """Build the run result dict, surfacing any not-executed steps."""
+        result = wf.to_dict()
+        result["outcome"] = outcome
+        pending_dispatch = [
+            {"index": s.index, "skill": s.skill, "tool": s.tool, "params": s.params}
+            for s in wf.steps
+            if s.status == "not_executed"
+        ]
+        if pending_dispatch:
+            result["pending_dispatch"] = pending_dispatch
+            result["message"] = (
+                "Workflow is NOT completed: no dispatch function is "
+                "configured, so the listed steps were recorded but not "
+                "executed. Perform each pending step's skill/tool call "
+                "yourself (in order), or re-run with a real dispatcher."
+            )
+        return result
 
     def resume_after_approval(self, wf: Workflow, approver: str = "") -> dict[str, Any]:
-        """Continue execution after human approval."""
+        """Continue execution after human approval.
+
+        ``approver`` is mandatory — the audit trail must name a human.
+        """
         if wf.state != WorkflowState.AWAITING_APPROVAL:
             return {"error": f"Workflow {wf.id} is not awaiting approval (state: {wf.state.value})"}
+
+        if not approver or not approver.strip():
+            return {
+                "error": (
+                    "approver is required for the audit trail. Provide the "
+                    "name of the person approving."
+                ),
+                "workflow_id": wf.id,
+                "state": wf.state.value,
+            }
+        approver = approver.strip()
 
         wf.approved_by = approver
         wf.log("approved", f"Approved by {approver}")
@@ -99,12 +254,33 @@ class WorkflowExecutor:
         return self.run_until_checkpoint(wf)
 
     def rollback(self, wf: Workflow) -> dict[str, Any]:
-        """Rollback completed steps in reverse order."""
+        """Rollback completed steps in reverse order.
+
+        Rollback results are persisted on the workflow record
+        (``wf.rollback_results``); if any rollback step fails,
+        ``blocked_reason`` is set to ``"rollback_failed"``.
+        """
+        # ── Transition guard ──────────────────────────────────────────
+        if wf.state in _ROLLBACK_FORBIDDEN_STATES:
+            return {
+                "error": (
+                    f"Workflow '{wf.id}' cannot be rolled back from state "
+                    f"'{wf.state.value}'. Drafts have executed nothing, "
+                    "completed workflows must not be silently reversed "
+                    "(create an explicit reversal plan instead), and a "
+                    "rollback already in progress cannot be restarted."
+                ),
+                "workflow_id": wf.id,
+                "state": wf.state.value,
+            }
+
         wf.state = WorkflowState.ROLLING_BACK
         wf.log("rollback_started")
         self._store.save(wf)
 
-        rollback_results = []
+        rollback_results: list[dict[str, Any]] = []
+        # Persist results into the workflow record as they accumulate.
+        wf.rollback_results = rollback_results
         for step in reversed(wf.completed_steps()):
             if not step.rollback_tool:
                 rollback_results.append({
@@ -116,7 +292,9 @@ class WorkflowExecutor:
                 continue
 
             try:
-                resolved_rb = self._resolve_step_refs(step.rollback_params, wf.steps)
+                resolved_rb = self._resolve_step_refs(
+                    step.rollback_params, wf.steps, current_index=step.index + 1
+                )
                 result = self._dispatch(step.skill, step.rollback_tool, resolved_rb)
                 step.status = "rolled_back"
                 rollback_results.append({
@@ -139,6 +317,8 @@ class WorkflowExecutor:
             self._store.save(wf)
 
         wf.state = WorkflowState.FAILED
+        if any(r["status"] == "failed" for r in rollback_results):
+            wf.blocked_reason = "rollback_failed"
         wf.log("rollback_completed")
         self._store.save(wf)
 
@@ -154,41 +334,107 @@ class WorkflowExecutor:
         self._store.save(wf)
         return wf.to_dict()
 
-
     @staticmethod
     def _resolve_step_refs(
-        params: dict[str, Any], steps: list,
+        params: dict[str, Any],
+        steps: list[WorkflowStep],
+        current_index: int,
     ) -> dict[str, Any]:
         """Replace ``__from_step_N__:key`` references with actual step results.
 
         Format: ``"__from_step_0__:plan_id"`` → result of step 0, key ``plan_id``.
         If the key part is omitted, the entire step result is used.
+
+        Recurses into nested dicts/lists. Raises ``ValueError`` with a
+        teaching message when a reference is invalid:
+          - index is negative, out of range, or not strictly before
+            ``current_index`` (forward references can never have a result yet)
+          - the referenced step did not finish with status ``success``
         """
-        resolved: dict[str, Any] = {}
-        for k, v in params.items():
-            if isinstance(v, str) and v.startswith("__from_step_") and v.endswith("__"):
-                # Legacy format without key: __from_step_0__
-                try:
-                    idx = int(v[len("__from_step_"):-2])
-                    source = steps[idx]
-                    resolved[k] = source.result if source.result is not None else v
-                except (ValueError, IndexError):
-                    resolved[k] = v
-            elif isinstance(v, str) and v.startswith("__from_step_"):
-                # New format with key: __from_step_0__:plan_id
-                try:
-                    ref_part, result_key = v.split(":", 1)
-                    idx = int(ref_part[len("__from_step_"):-2])
-                    source = steps[idx]
-                    if isinstance(source.result, dict):
-                        resolved[k] = source.result.get(result_key, source.result)
-                    else:
-                        resolved[k] = source.result if source.result is not None else v
-                except (ValueError, IndexError):
-                    resolved[k] = v
+
+        def _resolve_ref(v: str) -> Any:
+            if v.endswith("__"):
+                idx_part = v[len("__from_step_"):-2]
+                result_key: str | None = None
             else:
-                resolved[k] = v
-        return resolved
+                ref_part, sep, result_key = v.partition(":")
+                if not sep or not ref_part.endswith("__"):
+                    raise ValueError(
+                        f"Malformed step reference '{v}'. Expected "
+                        "'__from_step_N__' or '__from_step_N__:key'."
+                    )
+                idx_part = ref_part[len("__from_step_"):-2]
+
+            try:
+                idx = int(idx_part)
+            except ValueError:
+                raise ValueError(
+                    f"Malformed step reference '{v}': '{idx_part}' is not an "
+                    "integer step index."
+                ) from None
+
+            if idx < 0 or idx >= len(steps):
+                raise ValueError(
+                    f"Step reference '{v}' points to step {idx}, but this "
+                    f"workflow has steps 0..{len(steps) - 1}. Fix the "
+                    "reference index in the step params."
+                )
+            if idx >= current_index:
+                raise ValueError(
+                    f"Step reference '{v}' is a forward/self reference "
+                    f"(step {idx} has not produced a result before step "
+                    f"{current_index} runs). References must point to an "
+                    "EARLIER step."
+                )
+
+            source = steps[idx]
+            if source.status != "success":
+                raise ValueError(
+                    f"Step reference '{v}' points to step {idx} "
+                    f"({source.tool}) which has status '{source.status}', "
+                    "not 'success' — its result cannot be used. Ensure the "
+                    "referenced step ran successfully first."
+                )
+
+            if result_key is not None:
+                if isinstance(source.result, dict):
+                    return source.result.get(result_key, source.result)
+                return source.result
+            return source.result
+
+        def _resolve_value(v: Any) -> Any:
+            if isinstance(v, dict):
+                return {k: _resolve_value(item) for k, item in v.items()}
+            if isinstance(v, list):
+                return [_resolve_value(item) for item in v]
+            if isinstance(v, str) and v.startswith("__from_step_"):
+                return _resolve_ref(v)
+            return v
+
+        return {k: _resolve_value(v) for k, v in params.items()}
+
+
+def _first_redacted_sensitive_key(params: Any) -> str | None:
+    """Return the first sensitive-key whose value is the redacted placeholder.
+
+    Recurses through dicts/lists exactly like the persistence redaction, so a
+    secret nested in a sub-dict is caught too. Returns ``None`` when every
+    sensitive param holds a real value (the in-process happy path) — and never
+    fires for a non-sensitive key that merely happens to equal ``'***'``.
+    """
+    if isinstance(params, dict):
+        for key, value in params.items():
+            if is_sensitive_key(key) and value == REDACTED_PLACEHOLDER:
+                return key
+            nested = _first_redacted_sensitive_key(value)
+            if nested is not None:
+                return nested
+    elif isinstance(params, list):
+        for item in params:
+            nested = _first_redacted_sensitive_key(item)
+            if nested is not None:
+                return nested
+    return None
 
 
 def _now() -> str:
@@ -196,6 +442,10 @@ def _now() -> str:
 
 
 def _noop_dispatch(skill: str, tool: str, params: dict[str, Any]) -> Any:
-    """Placeholder dispatch — real implementation calls MCP tools."""
-    _log.warning("noop dispatch: %s.%s(%s)", skill, tool, params)
-    return {"noop": True, "skill": skill, "tool": tool}
+    """Defensive placeholder — never invoked: run_until_checkpoint records
+    steps as not_executed when no dispatch is configured instead of calling
+    this. Kept so accidental invocation is loud rather than fake-successful."""
+    raise RuntimeError(
+        f"No dispatch configured for {skill}.{tool} — refusing to fake "
+        "execution. " + _NO_DISPATCH_REASON
+    )

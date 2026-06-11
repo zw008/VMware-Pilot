@@ -106,17 +106,35 @@ def plan_workflow(
 
 @mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
 @vmware_tool(risk_level="medium")
-def run_workflow(workflow_id: str) -> dict:
-    """[WRITE] Execute a planned workflow. Pauses at approval gates.
+def run_workflow(workflow_id: str, force: bool = False) -> dict:
+    """[WRITE] Advance a planned workflow. Pauses at approval gates.
 
-    Steps run sequentially. When an approval gate is reached, the workflow
-    pauses with state 'awaiting_approval'. Call approve() to continue.
+    IMPORTANT — this MCP server has no dispatcher and cannot call other
+    skills' MCP tools itself. Steps are recorded as 'not_executed' and the
+    run finishes with outcome='dispatch_required' (NOT 'completed'),
+    returning each pending step's skill/tool/params. YOU (the calling
+    agent) must then perform those skill/tool calls in order. A workflow
+    only reaches 'completed' when every step genuinely executed via a
+    real dispatcher (embedders supplying one to WorkflowExecutor).
+
+    Safety: the workflow is structurally reviewed before each run. Runs
+    are REFUSED if review finds ungated destructive steps or destructive
+    steps inside a parallel group, unless force=True (forced runs are
+    written to the workflow audit log).
+
+    When an approval gate is reached, the workflow pauses with state
+    'awaiting_approval'. Call approve() to continue.
 
     Args:
         workflow_id: The workflow ID from plan_workflow.
+        force: Bypass blocking review findings (ungated_destructive,
+            destructive_in_parallel_group). Use only with explicit human
+            consent; the bypass is audited.
 
     Returns:
-        Current workflow state, completed steps, and next action needed.
+        Current workflow state with 'outcome' (completed | awaiting_approval
+        | dispatch_required | failed) and, when dispatch is required, a
+        'pending_dispatch' list of steps for the agent to perform.
     """
     wf = _get_store().load(workflow_id)
     if not wf:
@@ -126,6 +144,41 @@ def run_workflow(workflow_id: str) -> dict:
         return {"error": f"Workflow '{workflow_id}' cannot be run (state: {wf.state.value})"}
 
     try:
+        # ── Approval-gate enforcement (not just advisory) ─────────────
+        review_result = _review_workflow_impl(wf)
+        blocking = [
+            f for f in review_result.get("findings", [])
+            if f.get("kind") in ("ungated_destructive", "destructive_in_parallel_group")
+        ]
+        if blocking:
+            if not force:
+                return {
+                    "error": (
+                        f"Refusing to run workflow '{workflow_id}': review found "
+                        f"{len(blocking)} blocking safety finding(s) — destructive "
+                        "steps without a preceding require_approval gate and/or "
+                        "destructive steps inside a parallel group."
+                    ),
+                    "blocking_findings": blocking,
+                    "hint": (
+                        "Fix the workflow (add a require_approval step before "
+                        "destructive operations, or remove them from parallel "
+                        "groups) via update_draft/create_workflow, or re-run "
+                        "with force=True after explicit human confirmation "
+                        "(forced runs are audited)."
+                    ),
+                }
+            wf.log(
+                "forced_run",
+                f"force=True bypassed {len(blocking)} blocking review finding(s): "
+                + ", ".join(f"{f['kind']}@step{f['step_index']}" for f in blocking),
+            )
+            logger.warning(
+                "Workflow %s forced past %d blocking review findings",
+                workflow_id, len(blocking),
+            )
+            _get_store().save(wf)
+
         return _get_executor().run_until_checkpoint(wf)
     except Exception as e:
         return {"error": str(e), "hint": f"Workflow '{workflow_id}' execution failed. Use get_workflow_status() to check state, or rollback()."}
@@ -195,18 +248,22 @@ def approve(workflow_id: str, approver: str = "") -> dict:
         workflow_id: The workflow ID to approve.
         approver: Name of the person approving (for audit trail).
 
-    Returns:
-        Updated workflow state after resuming execution.
-    """
-    if not approver or not approver.strip():
-        return {"error": "approver is required for audit trail. Provide the name of the person approving."}
+    Note: this server has no dispatcher — after approval, remaining steps
+    are recorded as 'not_executed' and the result carries
+    outcome='dispatch_required' with a 'pending_dispatch' list for the
+    calling agent to perform (see run_workflow).
 
+    Returns:
+        Updated workflow state after resuming.
+    """
     try:
         wf = _get_store().load(workflow_id)
         if not wf:
             return {"error": f"Workflow '{workflow_id}' not found"}
 
-        return _get_executor().resume_after_approval(wf, approver=approver.strip())
+        # Non-empty approver enforcement lives in the executor so embedders
+        # cannot bypass the audit-trail requirement.
+        return _get_executor().resume_after_approval(wf, approver=approver)
     except Exception as e:
         return {"error": str(e), "hint": f"Approval failed for '{workflow_id}'. Use get_workflow_status() to check state."}
 
@@ -253,21 +310,21 @@ def list_workflows() -> dict:
     Returns:
         dict with builtin and custom workflow lists, each with name, description, steps count.
     """
-    from vmware_pilot.custom_loader import list_custom_workflows
-    from vmware_pilot.templates import BUILTIN_TEMPLATES
-
-    builtin = [
-        {"name": name, "type": "builtin", "description": (fn.__doc__ or "").split("\n")[0].strip()}
-        for name, fn in BUILTIN_TEMPLATES.items()
-    ]
-    custom = [
-        {**c, "type": "custom"}
-        for c in list_custom_workflows()
-    ]
-
-    active = _get_store().list_active()
-
     try:
+        from vmware_pilot.custom_loader import list_custom_workflows
+        from vmware_pilot.templates import BUILTIN_TEMPLATES
+
+        builtin = [
+            {"name": name, "type": "builtin", "description": (fn.__doc__ or "").split("\n")[0].strip()}
+            for name, fn in BUILTIN_TEMPLATES.items()
+        ]
+        custom = [
+            {**c, "type": "custom"}
+            for c in list_custom_workflows()
+        ]
+
+        active = _get_store().list_active()
+
         return {
             "templates": builtin + custom,
             "active_workflows": active,
@@ -331,35 +388,42 @@ def create_workflow(
     from datetime import datetime, timezone
     from vmware_pilot.models import Workflow, WorkflowState, WorkflowStep, new_workflow_id
 
-    now = datetime.now(tz=timezone.utc).isoformat()
-    wf_steps = []
-    for i, s in enumerate(steps):
-        wf_steps.append(WorkflowStep(
-            index=i,
-            action=s.get("action", f"step_{i}"),
-            skill=s.get("skill", "unknown"),
-            tool=s.get("tool", "unknown"),
-            params=s.get("params", {}),
-            rollback_tool=s.get("rollback_tool", ""),
-            rollback_params=s.get("rollback_params", {}),
-        ))
-
-    wf = Workflow(
-        id=new_workflow_id(),
-        workflow_type=name,
-        state=WorkflowState.PENDING,
-        steps=wf_steps,
-        params={"description": description, "custom": True},
-        created_at=now,
-        updated_at=now,
-    )
-    _get_store().save(wf)
-
-    # Optionally save as YAML template for reuse
-    if save_as_template:
-        _save_as_yaml(name, description, steps)
-
     try:
+        # Validate BEFORE persisting anything: an invalid template name must
+        # not leave a half-created workflow behind.
+        if save_as_template:
+            name_error = _validate_template_name(name)
+            if name_error:
+                return {"error": name_error, "hint": "Choose a simple name like 'network_segment_setup'."}
+
+        now = datetime.now(tz=timezone.utc).isoformat()
+        wf_steps = []
+        for i, s in enumerate(steps):
+            wf_steps.append(WorkflowStep(
+                index=i,
+                action=s.get("action", f"step_{i}"),
+                skill=s.get("skill", "unknown"),
+                tool=s.get("tool", "unknown"),
+                params=s.get("params", {}),
+                rollback_tool=s.get("rollback_tool", ""),
+                rollback_params=s.get("rollback_params", {}),
+            ))
+
+        wf = Workflow(
+            id=new_workflow_id(),
+            workflow_type=name,
+            state=WorkflowState.PENDING,
+            steps=wf_steps,
+            params={"description": description, "custom": True},
+            created_at=now,
+            updated_at=now,
+        )
+        _get_store().save(wf)
+
+        # Optionally save as YAML template for reuse
+        if save_as_template:
+            _save_as_yaml(name, description, steps)
+
         return {
             "workflow_id": wf.id,
             "workflow_type": name,
@@ -375,19 +439,29 @@ def create_workflow(
         return {"error": str(e), "hint": "Failed to create workflow. Check step definitions."}
 
 
+def _validate_template_name(name: str) -> str | None:
+    """Return an error message if ``name`` is unsafe as a template filename.
+
+    ``name`` is user-supplied and becomes a filename — reject traversal so a
+    template cannot be written outside the workflows dir.
+    """
+    if not name or "/" in name or "\\" in name or name.startswith(".") or "\x00" in name:
+        return (
+            f"Invalid workflow name {name!r}: must be non-empty with no path "
+            "separators, leading dots, or null bytes"
+        )
+    return None
+
+
 def _save_as_yaml(name: str, description: str, steps: list[dict[str, Any]]) -> None:
     """Save a dynamic workflow as YAML for future reuse."""
     import os
     import yaml
     from pathlib import Path
 
-    # ``name`` is user-supplied and becomes a filename — reject traversal so a
-    # template cannot be written outside the workflows dir.
-    if not name or "/" in name or "\\" in name or name.startswith(".") or "\x00" in name:
-        raise ValueError(
-            f"Invalid workflow name {name!r}: no path separators, leading dots, "
-            "or null bytes"
-        )
+    name_error = _validate_template_name(name)
+    if name_error:
+        raise ValueError(name_error)
 
     workflows_dir = Path("~/.vmware/workflows").expanduser()
     workflows_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -670,38 +744,49 @@ def confirm_draft(
     Returns:
         Confirmed workflow summary. Call run_workflow() to execute.
     """
-    wf = _get_store().load(workflow_id)
-    if not wf:
-        return {"error": f"Workflow '{workflow_id}' not found"}
-    if wf.state != WorkflowState.DRAFT:
-        return {"error": f"Workflow '{workflow_id}' is not a draft (state: {wf.state.value})"}
-    if not wf.steps:
-        return {"error": "Cannot confirm a draft with no steps. Call update_draft() first."}
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+        if wf.state != WorkflowState.DRAFT:
+            return {"error": f"Workflow '{workflow_id}' is not a draft (state: {wf.state.value})"}
+        if not wf.steps:
+            return {"error": "Cannot confirm a draft with no steps. Call update_draft() first."}
 
-    wf.state = WorkflowState.PENDING
-    wf.log("draft_confirmed", f"Confirmed with {len(wf.steps)} steps")
-    _get_store().save(wf)
+        # Validate the template name BEFORE flipping state to PENDING, so an
+        # invalid name cannot leave a confirmed-but-unsaved-template state.
+        will_save_template = save_as_template and wf.workflow_type != "custom_draft"
+        if will_save_template:
+            name_error = _validate_template_name(wf.workflow_type)
+            if name_error:
+                return {"error": name_error, "hint": "Rename the draft via update_draft(name=...) first."}
 
-    if save_as_template and wf.workflow_type != "custom_draft":
-        steps_for_yaml = [
-            {
-                "action": s.action, "skill": s.skill, "tool": s.tool,
-                "params": s.params,
-                **({"rollback_tool": s.rollback_tool, "rollback_params": s.rollback_params}
-                   if s.rollback_tool else {}),
-            }
-            for s in wf.steps
-        ]
-        _save_as_yaml(wf.workflow_type, wf.params.get("description", ""), steps_for_yaml)
+        wf.state = WorkflowState.PENDING
+        wf.log("draft_confirmed", f"Confirmed with {len(wf.steps)} steps")
+        _get_store().save(wf)
 
-    return {
-        "workflow_id": wf.id,
-        "workflow_type": wf.workflow_type,
-        "state": "pending",
-        "steps_count": len(wf.steps),
-        "saved_as_template": save_as_template,
-        "message": f"Workflow confirmed. Call run_workflow('{wf.id}') to execute.",
-    }
+        if will_save_template:
+            steps_for_yaml = [
+                {
+                    "action": s.action, "skill": s.skill, "tool": s.tool,
+                    "params": s.params,
+                    **({"rollback_tool": s.rollback_tool, "rollback_params": s.rollback_params}
+                       if s.rollback_tool else {}),
+                }
+                for s in wf.steps
+            ]
+            _save_as_yaml(wf.workflow_type, wf.params.get("description", ""), steps_for_yaml)
+
+        return {
+            "workflow_id": wf.id,
+            "workflow_type": wf.workflow_type,
+            "state": "pending",
+            "steps_count": len(wf.steps),
+            "saved_as_template": save_as_template,
+            "message": f"Workflow confirmed. Call run_workflow('{wf.id}') to execute.",
+        }
+    except Exception as e:
+        return {"error": str(e), "hint": f"Failed to confirm draft '{workflow_id}'. Use get_workflow_status() to inspect it."}
 
 
 # ── Entry point ───────────────────────────────────────────────────────
