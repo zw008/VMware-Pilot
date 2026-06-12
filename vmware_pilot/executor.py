@@ -326,14 +326,6 @@ class WorkflowExecutor:
         result["rollback_results"] = rollback_results
         return result
 
-    def mark_blocked(self, wf: Workflow, reason: str) -> dict[str, Any]:
-        """Mark workflow as blocked by policy. Does NOT rollback."""
-        wf.state = WorkflowState.BLOCKED_BY_POLICY
-        wf.blocked_reason = reason
-        wf.log("blocked_by_policy", reason)
-        self._store.save(wf)
-        return wf.to_dict()
-
     @staticmethod
     def _resolve_step_refs(
         params: dict[str, Any],

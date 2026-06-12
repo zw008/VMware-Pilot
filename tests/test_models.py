@@ -146,3 +146,37 @@ class TestSecretCacheLifecycle:
         store.save(self._wf_with_secret())
         store.delete("wf-sec")
         assert store.load("wf-sec") is None
+
+
+@pytest.mark.unit
+class TestDeadStateRemoval:
+    """Issue #9: MONITORING/COMMITTING states + mark_blocked were dead code.
+
+    Removing them must not break the persisted-state load path: no DB row could
+    ever carry the dropped values (they were never assigned), and a normal
+    save→load round-trip across a fresh process must still deserialize.
+    """
+
+    def test_dead_states_removed_from_enum(self):
+        names = {s.name for s in WorkflowState}
+        assert "MONITORING" not in names
+        assert "COMMITTING" not in names
+        assert "BLOCKED_BY_POLICY" not in names
+
+    def test_executor_has_no_mark_blocked(self):
+        from vmware_pilot.executor import WorkflowExecutor
+        assert not hasattr(WorkflowExecutor, "mark_blocked")
+
+    def test_round_trip_after_process_restart_still_loads(self, tmp_path):
+        store = WorkflowStore(tmp_path / "wf.db")
+        wf = Workflow(
+            id="wf-rt", workflow_type="test", state=WorkflowState.AWAITING_APPROVAL,
+            steps=[WorkflowStep(index=0, action="a", skill="s", tool="t", params={})],
+            params={}, created_at="", updated_at="",
+        )
+        store.save(wf)
+        # Fresh store == new process: cache miss → DB deserialization via _from_dict.
+        fresh = WorkflowStore(tmp_path / "wf.db")
+        loaded = fresh.load("wf-rt")
+        assert loaded is not None
+        assert loaded.state is WorkflowState.AWAITING_APPROVAL

@@ -133,20 +133,6 @@ class TestExecutor:
         assert len(result["rollback_results"]) == 1
         assert result["rollback_results"][0]["status"] == "success"
 
-    def test_blocked_by_policy(self, tmp_path):
-        store = _make_store(tmp_path)
-        executor = WorkflowExecutor(store)
-
-        wf = Workflow(
-            id="wf-6", workflow_type="test", state=WorkflowState.RUNNING,
-            steps=[], params={}, created_at="", updated_at="",
-        )
-        store.save(wf)
-
-        result = executor.mark_blocked(wf, "Production changes require maintenance window")
-        assert result["state"] == "blocked_by_policy"
-        assert result["blocked_reason"] == "Production changes require maintenance window"
-
 
 @pytest.mark.unit
 class TestNoDispatchHonesty:
@@ -255,7 +241,7 @@ class TestTransitionGuards:
 
     @pytest.mark.parametrize("state", [
         WorkflowState.DRAFT, WorkflowState.COMPLETED, WorkflowState.FAILED,
-        WorkflowState.ROLLING_BACK, WorkflowState.BLOCKED_BY_POLICY,
+        WorkflowState.ROLLING_BACK,
     ])
     def test_run_rejected_from_invalid_states(self, tmp_path, state):
         executor = WorkflowExecutor(_make_store(tmp_path), dispatch=_success_dispatch)

@@ -20,13 +20,10 @@ class WorkflowState(str, Enum):
     DRAFT = "draft"
     PENDING = "pending"
     RUNNING = "running"
-    MONITORING = "monitoring"
     AWAITING_APPROVAL = "awaiting_approval"
-    COMMITTING = "committing"
     ROLLING_BACK = "rolling_back"
     COMPLETED = "completed"
     FAILED = "failed"
-    BLOCKED_BY_POLICY = "blocked_by_policy"
 
 
 @dataclass

@@ -1,3 +1,9 @@
+## v1.5.37 (2026-06-12) — backlog: remove dead states
+
+### Changed
+- Removed never-assigned workflow states (`MONITORING`, `COMMITTING`, `BLOCKED_BY_POLICY`) and the
+  unreachable `mark_blocked`; verified no persisted state could carry them. (#9)
+
 ## v1.5.36 (2026-06-12) — never report work that wasn't performed
 
 ### Fixed
