@@ -1,0 +1,246 @@
+"""Workflow lifecycle tools: plan, run, approve, rollback, cancel."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from vmware_policy import vmware_tool
+
+from mcp_server._shared import _get_executor, _get_store, mcp
+from vmware_pilot.models import WorkflowState
+from vmware_pilot.review import review as _review_workflow_impl
+from vmware_pilot.templates import get_all_templates
+
+logger = logging.getLogger(__name__)
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@vmware_tool(risk_level="medium")
+def plan_workflow(
+    workflow_type: str,
+    params: dict[str, Any],
+) -> dict:
+    """[WRITE] Create an execution plan for a multi-step workflow.
+
+    Available workflow types:
+      - clone_and_test: Clone VM → apply changes → monitor → approve → commit
+      - incident_response: Diagnose alert → collect info → approve → remediate
+      - plan_and_approve: Wrap aiops batch operations with approval gate
+      - compliance_scan: Read-only health/capacity/anomaly check (no approval)
+
+    Args:
+        workflow_type: One of the available workflow types.
+        params: Workflow-specific parameters.
+            clone_and_test: target_vm (str), change_spec (dict), monitor_minutes (int), target (str).
+            incident_response: alert_entity (str), alert_name (str), target (str).
+            plan_and_approve: operations (list[dict]), target (str), description (str).
+            compliance_scan: target (str), check_alarms (bool), check_capacity (bool).
+
+    Returns:
+        dict with workflow_id, steps summary, and plan details.
+    """
+    try:
+        templates = get_all_templates()
+        template_fn = templates.get(workflow_type)
+        if not template_fn:
+            return {"error": f"Unknown workflow type: {workflow_type}. Available: {list(templates.keys())}"}
+
+        wf = template_fn(**params)
+        _get_store().save(wf)
+
+        return {
+            "workflow_id": wf.id,
+            "workflow_type": wf.workflow_type,
+            "state": wf.state.value,
+            "steps": [
+                {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool}
+                for s in wf.steps
+            ],
+            "params": wf.params,
+            "message": f"Plan created. Call run_workflow('{wf.id}') to execute.",
+        }
+    except Exception as e:
+        return {"error": str(e), "hint": "Check workflow_type and params. Use list_workflows() to see available templates."}
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@vmware_tool(risk_level="medium")
+def run_workflow(workflow_id: str, force: bool = False) -> dict:
+    """[WRITE] Advance a planned workflow. Pauses at approval gates.
+
+    IMPORTANT — this MCP server has no dispatcher and cannot call other
+    skills' MCP tools itself. Steps are recorded as 'not_executed' and the
+    run finishes with outcome='dispatch_required' (NOT 'completed'),
+    returning each pending step's skill/tool/params. YOU (the calling
+    agent) must then perform those skill/tool calls in order. A workflow
+    only reaches 'completed' when every step genuinely executed via a
+    real dispatcher (embedders supplying one to WorkflowExecutor).
+
+    Safety: the workflow is structurally reviewed before each run. Runs
+    are REFUSED if review finds ungated destructive steps or destructive
+    steps inside a parallel group, unless force=True (forced runs are
+    written to the workflow audit log).
+
+    When an approval gate is reached, the workflow pauses with state
+    'awaiting_approval'. Call approve() to continue.
+
+    Args:
+        workflow_id: The workflow ID from plan_workflow.
+        force: Bypass blocking review findings (ungated_destructive,
+            destructive_in_parallel_group). Use only with explicit human
+            consent; the bypass is audited.
+
+    Returns:
+        Current workflow state with 'outcome' (completed | awaiting_approval
+        | dispatch_required | failed) and, when dispatch is required, a
+        'pending_dispatch' list of steps for the agent to perform.
+    """
+    wf = _get_store().load(workflow_id)
+    if not wf:
+        return {"error": f"Workflow '{workflow_id}' not found"}
+
+    if wf.state == WorkflowState.CANCELLED:
+        return {
+            "error": (
+                f"Workflow '{workflow_id}' is CANCELLED and cannot be run "
+                "(its approval was rejected or it was explicitly cancelled). "
+                "Cancelled workflows are terminal — create a new plan instead."
+            ),
+            "state": wf.state.value,
+        }
+    if wf.state not in (WorkflowState.PENDING, WorkflowState.RUNNING):
+        return {"error": f"Workflow '{workflow_id}' cannot be run (state: {wf.state.value})"}
+
+    try:
+        # ── Approval-gate enforcement (not just advisory) ─────────────
+        review_result = _review_workflow_impl(wf)
+        blocking = [
+            f for f in review_result.get("findings", [])
+            if f.get("kind") in ("ungated_destructive", "destructive_in_parallel_group")
+        ]
+        if blocking:
+            if not force:
+                return {
+                    "error": (
+                        f"Refusing to run workflow '{workflow_id}': review found "
+                        f"{len(blocking)} blocking safety finding(s) — destructive "
+                        "steps without a preceding require_approval gate and/or "
+                        "destructive steps inside a parallel group."
+                    ),
+                    "blocking_findings": blocking,
+                    "hint": (
+                        "Fix the workflow (add a require_approval step before "
+                        "destructive operations, or remove them from parallel "
+                        "groups) via update_draft/create_workflow, or re-run "
+                        "with force=True after explicit human confirmation "
+                        "(forced runs are audited)."
+                    ),
+                }
+            wf.log(
+                "forced_run",
+                f"force=True bypassed {len(blocking)} blocking review finding(s): "
+                + ", ".join(f"{f['kind']}@step{f['step_index']}" for f in blocking),
+            )
+            logger.warning(
+                "Workflow %s forced past %d blocking review findings",
+                workflow_id, len(blocking),
+            )
+            _get_store().save(wf)
+
+        return _get_executor().run_until_checkpoint(wf)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Workflow '{workflow_id}' execution failed. Use get_workflow_status() to check state, or rollback()."}
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@vmware_tool(risk_level="high")
+def approve(workflow_id: str, approver: str = "") -> dict:
+    """[WRITE] Approve a workflow that is waiting for human confirmation.
+
+    Only works when workflow state is 'awaiting_approval'.
+    After approval, execution continues to the next steps.
+
+    Args:
+        workflow_id: The workflow ID to approve.
+        approver: Name of the person approving (for audit trail).
+
+    Note: this server has no dispatcher — after approval, remaining steps
+    are recorded as 'not_executed' and the result carries
+    outcome='dispatch_required' with a 'pending_dispatch' list for the
+    calling agent to perform (see run_workflow).
+
+    Returns:
+        Updated workflow state after resuming.
+    """
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+
+        # Non-empty approver enforcement lives in the executor so embedders
+        # cannot bypass the audit-trail requirement.
+        return _get_executor().resume_after_approval(wf, approver=approver)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Approval failed for '{workflow_id}'. Use get_workflow_status() to check state."}
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
+@vmware_tool(risk_level="high")
+def rollback(workflow_id: str) -> dict:
+    """[WRITE] Abort a workflow and rollback completed steps in reverse order.
+
+    Works in any state except 'completed'. Irreversible steps are skipped.
+    The workflow state is set to 'failed' after rollback.
+
+    Args:
+        workflow_id: The workflow ID to rollback.
+
+    Returns:
+        Rollback results for each step.
+    """
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+
+        if wf.state == WorkflowState.COMPLETED:
+            return {"error": f"Workflow '{workflow_id}' is already completed, cannot rollback"}
+
+        return _get_executor().rollback(wf)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Rollback failed for '{workflow_id}'. Use get_workflow_status() to check state."}
+
+
+@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@vmware_tool(risk_level="high")
+def cancel_workflow(workflow_id: str, reason: str = "") -> dict:
+    """[WRITE] Cancel a workflow — move it to the terminal CANCELLED state.
+
+    Use this when an approval is REJECTED, a review flags the plan as unsafe,
+    or an operator decides the workflow must never run. A cancelled workflow
+    is dead: run_workflow and approve refuse to execute it. Without this, an
+    approval-rejected PENDING workflow could still be picked up and run.
+
+    Cancel only stops FUTURE steps. It does NOT undo already-completed steps —
+    use rollback() to reverse those. Cancel is valid only from a non-terminal
+    state; cancelling an already completed/failed/cancelled workflow returns a
+    teaching error. The cancellation is written to the workflow audit log.
+
+    Args:
+        workflow_id: The workflow ID to cancel.
+        reason: Optional human-readable reason (e.g. "approval rejected by
+            on-call"), recorded in the audit log.
+
+    Returns:
+        Updated workflow state (state='cancelled', outcome='cancelled'), or an
+        error if the workflow is already terminal.
+    """
+    try:
+        wf = _get_store().load(workflow_id)
+        if not wf:
+            return {"error": f"Workflow '{workflow_id}' not found"}
+
+        return _get_executor().cancel(wf, reason=reason)
+    except Exception as e:
+        return {"error": str(e), "hint": f"Cancel failed for '{workflow_id}'. Use get_workflow_status() to check state."}

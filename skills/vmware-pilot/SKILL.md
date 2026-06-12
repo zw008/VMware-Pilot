@@ -145,7 +145,7 @@ Deploy a backend VM, create a K8s namespace, and wire up AKO Ingress to the AVI 
 
 This is intentional v2-style architecture: pilot's context stays small, state is always on disk, and there are no persistent agent threads. Full contract details: see [`references/integration-patterns.md`](references/integration-patterns.md#the-dispatch-contract).
 
-## MCP Tools (12 — 4 read, 8 write/control)
+## MCP Tools (13 — 4 read, 9 write/control)
 
 | Category | Tool | Risk | Description |
 |---|---|---|---|
@@ -159,6 +159,7 @@ This is intentional v2-style architecture: pilot's context stays small, state is
 | | `review_workflow` | low | Structural sanity check before execution (approved \| needs_revision) |
 | | `run_workflow` | medium | Execute next checkpoint (agent dispatches each step) |
 | **Control** | `approve` | high | Human approval to continue |
+| | `cancel_workflow` | high | Cancel a workflow (approval rejected / unsafe) → terminal CANCELLED, can't be run |
 | | `rollback` | high | Reverse completed steps |
 | | `get_workflow_status` | low | State + audit log |
 

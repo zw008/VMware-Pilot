@@ -1,3 +1,14 @@
+## v1.5.38 (2026-06-12) — backlog finish: cancel_workflow, templates split
+
+### Added
+- **`cancel_workflow` MCP tool** + a terminal `CANCELLED` state. An approval-rejected or cancelled
+  workflow can no longer be run — `run_workflow`/`resume_after_approval` refuse it with a teaching error,
+  and cancel is itself audited. Closes a gap where a rejected PENDING workflow could still execute. (#7)
+
+### Changed
+- Split `templates.py` (1156 lines) into a `templates/` package and the MCP server into `tools/*`, all
+  under the 800-line cap; builtin template names/IDs unchanged. (#8)
+
 ## v1.5.37 (2026-06-12) — backlog: remove dead states
 
 ### Changed

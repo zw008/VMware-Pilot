@@ -53,6 +53,16 @@ _ROLLBACK_FORBIDDEN_STATES = (
     WorkflowState.DRAFT,
     WorkflowState.COMPLETED,
     WorkflowState.ROLLING_BACK,
+    WorkflowState.CANCELLED,
+)
+
+# Terminal states — a workflow here has reached its end and cannot be run or
+# cancelled. CANCELLED is the explicit "dead, never run" terminal state added
+# for approval-rejected / operator-cancelled workflows.
+_TERMINAL_STATES = (
+    WorkflowState.COMPLETED,
+    WorkflowState.FAILED,
+    WorkflowState.CANCELLED,
 )
 
 
@@ -71,6 +81,23 @@ class WorkflowExecutor:
         ``outcome`` key: ``completed`` | ``awaiting_approval`` |
         ``dispatch_required`` | ``failed``.
         """
+        # ── Cancelled/rejected refusal (terminal, never runs) ─────────
+        # A workflow whose approval was rejected (or that an operator
+        # cancelled) is CANCELLED and must never be picked up by a run — even
+        # though it may still read PENDING in a stale view. Refuse loudly with
+        # a teaching error rather than silently executing dead work.
+        if wf.state == WorkflowState.CANCELLED:
+            return {
+                "error": (
+                    f"Workflow '{wf.id}' is CANCELLED and cannot be run. Its "
+                    "approval was rejected or it was explicitly cancelled "
+                    "(cancel_workflow) — a cancelled workflow is terminal. "
+                    "Create a new plan if you still need this operation."
+                ),
+                "workflow_id": wf.id,
+                "state": wf.state.value,
+            }
+
         # ── Transition guard: embedders cannot skip gates ─────────────
         if wf.state not in _RUNNABLE_STATES:
             allowed = ", ".join(s.value for s in _RUNNABLE_STATES)
@@ -324,6 +351,48 @@ class WorkflowExecutor:
 
         result = wf.to_dict()
         result["rollback_results"] = rollback_results
+        return result
+
+    def cancel(self, wf: Workflow, reason: str = "") -> dict[str, Any]:
+        """Transition a non-terminal workflow to the terminal CANCELLED state.
+
+        Use this when an approval is rejected, a review flags the plan, or an
+        operator decides the workflow must not run. A CANCELLED workflow is
+        dead: ``run_until_checkpoint`` / ``resume_after_approval`` refuse to
+        execute it. The cancellation is recorded in the workflow audit log.
+
+        Cancel is only valid from a non-terminal state. Already-completed,
+        already-failed, or already-cancelled workflows raise a teaching error
+        (there is nothing left to cancel). Pending side effects are NOT undone
+        — cancel stops future steps; use ``rollback`` to reverse completed work.
+        """
+        # ── Transition guard ──────────────────────────────────────────
+        if wf.state in _TERMINAL_STATES:
+            return {
+                "error": (
+                    f"Workflow '{wf.id}' cannot be cancelled from terminal "
+                    f"state '{wf.state.value}'. Only non-terminal workflows "
+                    "(draft, pending, running, awaiting_approval, rolling_back) "
+                    "can be cancelled. A cancelled/completed/failed workflow is "
+                    "already done — create a new plan instead. To reverse "
+                    "completed steps, use rollback()."
+                ),
+                "workflow_id": wf.id,
+                "state": wf.state.value,
+            }
+
+        reason = (reason or "").strip()
+        wf.state = WorkflowState.CANCELLED
+        wf.blocked_reason = reason or "cancelled"
+        wf.log("cancelled", reason or "no reason given")
+        # Steps not yet executed are dead — mark them so status reflects reality.
+        for step in wf.steps:
+            if step.status in ("pending", "not_executed"):
+                step.status = "skipped"
+        self._store.save(wf)
+
+        result = wf.to_dict()
+        result["outcome"] = "cancelled"
         return result
 
     @staticmethod

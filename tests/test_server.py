@@ -135,6 +135,57 @@ class TestCreateWorkflowValidation:
 
 
 @pytest.mark.unit
+class TestCancelWorkflow:
+    """Fix #7 at the MCP layer: cancel_workflow makes a workflow terminal and
+    run_workflow then refuses it."""
+
+    def test_cancel_then_run_is_refused(self, store):
+        _save(store, [
+            WorkflowStep(index=0, action="require_approval", skill="pilot",
+                         tool="approve", params={}),
+            _step(1, "delete_segment"),
+        ], "wf-c1")
+        cancel = server.cancel_workflow("wf-c1", reason="approval rejected")
+        assert cancel["state"] == "cancelled"
+
+        run = server.run_workflow("wf-c1")
+        assert "error" in run
+        assert "CANCELLED" in run["error"]
+        assert run["state"] == "cancelled"
+
+    def test_cancel_unknown_workflow(self, store):
+        result = server.cancel_workflow("nope")
+        assert "error" in result
+        assert "not found" in result["error"]
+
+    def test_cancel_already_terminal_errors(self, store):
+        wf = _save(store, [_step(0, "list_segments")], "wf-c2")
+        wf.state = WorkflowState.COMPLETED
+        store.save(wf)
+        result = server.cancel_workflow("wf-c2")
+        assert "error" in result
+        assert "terminal" in result["error"]
+
+
+@pytest.mark.unit
+class TestToolParity:
+    """cancel_workflow raises the exposed Pilot MCP tool count to 13."""
+
+    def test_expected_tools_exposed(self):
+        import asyncio
+
+        names = {t.name for t in asyncio.run(server.mcp.list_tools())}
+        expected = {
+            "get_skill_catalog", "list_workflows", "design_workflow",
+            "update_draft", "confirm_draft", "plan_workflow", "create_workflow",
+            "review_workflow", "run_workflow", "approve", "cancel_workflow",
+            "rollback", "get_workflow_status",
+        }
+        assert names == expected
+        assert len(names) == 13
+
+
+@pytest.mark.unit
 class TestConfirmDraftValidation:
     """Fix #8: confirm_draft validates the name before flipping state."""
 

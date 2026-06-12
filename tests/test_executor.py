@@ -471,6 +471,87 @@ class TestRedactedSecretGuard:
 
 
 @pytest.mark.unit
+class TestCancel:
+    """Fix #7: cancel_workflow gives an approval-rejected/unsafe workflow a
+    terminal CANCELLED state that can never be run."""
+
+    def _wf(self, state=WorkflowState.PENDING, wf_id="wf-cancel"):
+        return Workflow(
+            id=wf_id, workflow_type="test", state=state,
+            steps=[
+                WorkflowStep(index=0, action="require_approval", skill="pilot",
+                             tool="approve", params={}),
+                WorkflowStep(index=1, action="del", skill="nsx",
+                             tool="delete_segment", params={"id": "x"}),
+            ],
+            params={}, created_at="", updated_at="",
+        )
+
+    def test_cancel_moves_to_cancelled(self, tmp_path):
+        store = _make_store(tmp_path)
+        executor = WorkflowExecutor(store, dispatch=_success_dispatch)
+        wf = self._wf()
+        store.save(wf)
+        result = executor.cancel(wf, reason="approval rejected")
+        assert result["state"] == "cancelled"
+        assert result["outcome"] == "cancelled"
+        assert wf.state == WorkflowState.CANCELLED
+        # pending steps marked skipped, cancellation audited
+        assert all(s.status == "skipped" for s in wf.steps)
+        assert any(e["action"] == "cancelled" for e in wf.audit_log)
+        assert wf.blocked_reason == "approval rejected"
+        # persisted
+        fresh = WorkflowStore(tmp_path / "test.db")
+        assert fresh.load("wf-cancel").state == WorkflowState.CANCELLED
+
+    def test_run_refused_on_cancelled(self, tmp_path):
+        store = _make_store(tmp_path)
+        executor = WorkflowExecutor(store, dispatch=_success_dispatch)
+        wf = self._wf(state=WorkflowState.CANCELLED)
+        store.save(wf)
+        result = executor.run_until_checkpoint(wf)
+        assert "error" in result
+        assert "CANCELLED" in result["error"]
+        # nothing executed
+        assert all(s.status != "success" for s in wf.steps)
+
+    def test_resume_refused_on_cancelled(self, tmp_path):
+        store = _make_store(tmp_path)
+        executor = WorkflowExecutor(store, dispatch=_success_dispatch)
+        wf = self._wf(state=WorkflowState.CANCELLED)
+        store.save(wf)
+        result = executor.resume_after_approval(wf, approver="wei")
+        assert "error" in result
+        assert "not awaiting approval" in result["error"]
+
+    @pytest.mark.parametrize("state", [
+        WorkflowState.COMPLETED, WorkflowState.FAILED, WorkflowState.CANCELLED,
+    ])
+    def test_cancel_rejected_from_terminal_states(self, tmp_path, state):
+        store = _make_store(tmp_path)
+        executor = WorkflowExecutor(store, dispatch=_success_dispatch)
+        wf = self._wf(state=state)
+        store.save(wf)
+        result = executor.cancel(wf)
+        assert "error" in result
+        assert "terminal" in result["error"]
+        assert wf.state == state  # unchanged
+
+    @pytest.mark.parametrize("state", [
+        WorkflowState.DRAFT, WorkflowState.PENDING, WorkflowState.RUNNING,
+        WorkflowState.AWAITING_APPROVAL, WorkflowState.ROLLING_BACK,
+    ])
+    def test_cancel_allowed_from_non_terminal_states(self, tmp_path, state):
+        store = _make_store(tmp_path)
+        executor = WorkflowExecutor(store, dispatch=_success_dispatch)
+        wf = self._wf(state=state)
+        store.save(wf)
+        result = executor.cancel(wf)
+        assert "error" not in result
+        assert wf.state == WorkflowState.CANCELLED
+
+
+@pytest.mark.unit
 class TestApproverRequired:
     """Fix #10c: non-empty approver enforced in the executor."""
 

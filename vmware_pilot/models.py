@@ -24,6 +24,7 @@ class WorkflowState(str, Enum):
     ROLLING_BACK = "rolling_back"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"  # terminal: approval rejected or explicit cancel — never runs
 
 
 @dataclass
@@ -213,7 +214,7 @@ class WorkflowStore:
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT id, type, state, created_at, updated_at FROM workflows "
-                "WHERE state NOT IN ('completed', 'failed') ORDER BY created_at DESC"
+                "WHERE state NOT IN ('completed', 'failed', 'cancelled') ORDER BY created_at DESC"
             ).fetchall()
         return [
             {"id": r[0], "type": r[1], "state": r[2], "created_at": r[3], "updated_at": r[4]}

@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-TEMPLATES_FILE = (
-    Path(__file__).resolve().parent.parent / "vmware_pilot" / "templates.py"
+TEMPLATES_DIR = (
+    Path(__file__).resolve().parent.parent / "vmware_pilot" / "templates"
 )
 
 # Template functions that generate workflows with destructive operations.
@@ -35,13 +35,15 @@ DESTRUCTIVE_TEMPLATES: list[str] = [
 ]
 
 
-def _has_require_approval(file_path: Path, func_name: str) -> bool:
-    """Return True if *func_name* contains a ``require_approval`` string literal."""
-    tree = ast.parse(file_path.read_text())
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
-            source = ast.dump(node)
-            return "require_approval" in source
+def _has_require_approval(templates_dir: Path, func_name: str) -> bool:
+    """Return True if *func_name*, defined anywhere in the templates package,
+    contains a ``require_approval`` string literal."""
+    for file_path in templates_dir.glob("*.py"):
+        tree = ast.parse(file_path.read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == func_name:
+                source = ast.dump(node)
+                return "require_approval" in source
     return False
 
 
@@ -51,8 +53,8 @@ class TestDestructiveTemplateSafety:
 
     @pytest.mark.parametrize("func_name", DESTRUCTIVE_TEMPLATES)
     def test_has_approval_gate(self, func_name: str) -> None:
-        assert TEMPLATES_FILE.exists(), f"{TEMPLATES_FILE} not found"
-        assert _has_require_approval(TEMPLATES_FILE, func_name), (
-            f"Template '{func_name}' in templates.py lacks a require_approval "
-            f"approval gate before destructive operations"
+        assert TEMPLATES_DIR.is_dir(), f"{TEMPLATES_DIR} not found"
+        assert _has_require_approval(TEMPLATES_DIR, func_name), (
+            f"Template '{func_name}' in the templates package lacks a "
+            f"require_approval approval gate before destructive operations"
         )
