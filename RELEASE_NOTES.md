@@ -1,3 +1,7 @@
+## v1.6.1 (2026-06-24) — version alignment
+
+No functional changes — version bumped to stay aligned with the VMware skill family release.
+
 ## v1.5.38 (2026-06-12) — backlog finish: cancel_workflow, templates split
 
 ### Added
