@@ -1,3 +1,7 @@
+## v1.6.2 (2026-06-24) — MCP Registry registration
+
+Adds the `mcp-name` marker to the README so the package can register on the MCP Registry (踩坑 #31). No functional code changes.
+
 ## v1.6.1 (2026-06-24) — version alignment
 
 No functional changes — version bumped to stay aligned with the VMware skill family release.
