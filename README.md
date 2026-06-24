@@ -1,3 +1,5 @@
+<!-- mcp-name: io.github.zw008/vmware-pilot -->
+
 # VMware Pilot
 
 > **Author**: Wei Zhou, VMware by Broadcom — wei-wz.zhou@broadcom.com
