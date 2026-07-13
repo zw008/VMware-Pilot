@@ -50,43 +50,70 @@ def baseline_capture(
     idx = 0
 
     if include_vms:
-        steps.append(WorkflowStep(
-            index=idx, action="capture_vms", skill="monitor",
-            tool="list_virtual_machines", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="capture_vms",
+                skill="monitor",
+                tool="list_virtual_machines",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_hosts:
-        steps.append(WorkflowStep(
-            index=idx, action="capture_hosts", skill="monitor",
-            tool="list_esxi_hosts", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="capture_hosts",
+                skill="monitor",
+                tool="list_esxi_hosts",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_network:
-        steps.append(WorkflowStep(
-            index=idx, action="capture_segments", skill="nsx",
-            tool="list_segments", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="capture_segments",
+                skill="nsx",
+                tool="list_segments",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_storage:
-        steps.append(WorkflowStep(
-            index=idx, action="capture_datastores", skill="storage",
-            tool="list_all_datastores", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="capture_datastores",
+                skill="storage",
+                tool="list_all_datastores",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_alarms:
-        steps.append(WorkflowStep(
-            index=idx, action="capture_alarms", skill="monitor",
-            tool="get_alarms", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="capture_alarms",
+                skill="monitor",
+                tool="get_alarms",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="baseline_capture",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="baseline_capture",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={
             "baseline_name": name,
             "baseline_path": f"~/.vmware/baselines/{name}.json",
@@ -97,7 +124,8 @@ def baseline_capture(
             "include_storage": include_storage,
             "include_alarms": include_alarms,
         },
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -130,48 +158,76 @@ def baseline_audit(
     idx = 0
 
     if include_vms:
-        steps.append(WorkflowStep(
-            index=idx, action="current_vms", skill="monitor",
-            tool="list_virtual_machines", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="current_vms",
+                skill="monitor",
+                tool="list_virtual_machines",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_hosts:
-        steps.append(WorkflowStep(
-            index=idx, action="current_hosts", skill="monitor",
-            tool="list_esxi_hosts", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="current_hosts",
+                skill="monitor",
+                tool="list_esxi_hosts",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_network:
-        steps.append(WorkflowStep(
-            index=idx, action="current_segments", skill="nsx",
-            tool="list_segments", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="current_segments",
+                skill="nsx",
+                tool="list_segments",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if include_storage:
-        steps.append(WorkflowStep(
-            index=idx, action="current_datastores", skill="storage",
-            tool="list_all_datastores", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="current_datastores",
+                skill="storage",
+                tool="list_all_datastores",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     # Capacity check for context
-    steps.append(WorkflowStep(
-        index=idx, action="check_anomalies", skill="aria",
-        tool="list_anomalies", params={"target": target},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="check_anomalies",
+            skill="aria",
+            tool="list_anomalies",
+            params={"target": target},
+        )
+    )
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="baseline_audit",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="baseline_audit",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={
             "baseline_name": baseline_name,
             "baseline_path": f"~/.vmware/baselines/{baseline_name}.json",
             "target": target,
         },
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -203,42 +259,66 @@ def baseline_remediate(
     idx = 0
 
     # Pre-check: current alarms
-    steps.append(WorkflowStep(
-        index=idx, action="pre_check_alarms", skill="monitor",
-        tool="get_alarms", params={"target": target},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="pre_check_alarms",
+            skill="monitor",
+            tool="get_alarms",
+            params={"target": target},
+        )
+    )
     idx += 1
 
     # Approval before remediation
     resource_names = [d.get("resource", "unknown") for d in drift_items]
-    steps.append(WorkflowStep(
-        index=idx, action="require_approval", skill="pilot", tool="approve",
-        params={"message": f"Remediate {len(drift_items)} drift(s): {', '.join(resource_names[:5])}{'...' if len(resource_names) > 5 else ''}. Proceed?"},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Remediate {len(drift_items)} drift(s): "
+                f"{', '.join(resource_names[:5])}"
+                f"{'...' if len(resource_names) > 5 else ''}. Proceed?"
+            },
+        )
+    )
     idx += 1
 
     # One step per drift item
     for i, item in enumerate(drift_items):
-        steps.append(WorkflowStep(
-            index=idx,
-            action=f"fix_{item.get('resource', f'item_{i}')}",
-            skill=item.get("skill", "aiops"),
-            tool=item.get("tool", "vm_create_plan"),
-            params=item.get("params", {}),
-            rollback_tool=item.get("rollback_tool", ""),
-            rollback_params=item.get("rollback_params", {}),
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"fix_{item.get('resource', f'item_{i}')}",
+                skill=item.get("skill", "aiops"),
+                tool=item.get("tool", "vm_create_plan"),
+                params=item.get("params", {}),
+                rollback_tool=item.get("rollback_tool", ""),
+                rollback_params=item.get("rollback_params", {}),
+            )
+        )
         idx += 1
 
     # Post-fix verification
-    steps.append(WorkflowStep(
-        index=idx, action="post_verify", skill="monitor",
-        tool="get_alarms", params={"target": target},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="post_verify",
+            skill="monitor",
+            tool="get_alarms",
+            params={"target": target},
+        )
+    )
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="baseline_remediate",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="baseline_remediate",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"drift_count": len(drift_items), "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )

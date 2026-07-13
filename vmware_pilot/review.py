@@ -13,14 +13,27 @@ from vmware_pilot.models import Workflow
 # Heuristic: any tool name containing one of these is "destructive".
 # Aligns with the L3+ tier in capabilities.md across the family.
 _DESTRUCTIVE_HINTS = (
-    "delete", "remove", "destroy", "force_power_off",
-    "shutdown", "drop", "rollback",
+    "delete",
+    "remove",
+    "destroy",
+    "force_power_off",
+    "shutdown",
+    "drop",
+    "rollback",
 )
 
 # Heuristic: tools that are read-only (L1/L2). Used for risk profile only.
 _READONLY_HINTS = (
-    "list", "get", "show", "browse", "scan", "status",
-    "health", "fetch", "describe", "inspect",
+    "list",
+    "get",
+    "show",
+    "browse",
+    "scan",
+    "status",
+    "health",
+    "fetch",
+    "describe",
+    "inspect",
 )
 
 # Common identifier-like param-name fragments — used to detect delete-then-use.
@@ -61,25 +74,29 @@ def review(wf: Workflow) -> dict[str, Any]:
 
         for k, v in step.params.items():
             if v in ("", None) and k not in ("target", "description"):
-                findings.append({
-                    "severity": "low",
-                    "kind": "empty_param",
-                    "step_index": step.index,
-                    "message": (
-                        f"Step {step.index} ({step.tool}) has empty value for "
-                        f"required-looking param '{k}'"
-                    ),
-                })
+                findings.append(
+                    {
+                        "severity": "low",
+                        "kind": "empty_param",
+                        "step_index": step.index,
+                        "message": (
+                            f"Step {step.index} ({step.tool}) has empty value for "
+                            f"required-looking param '{k}'"
+                        ),
+                    }
+                )
             if isinstance(v, str) and v.upper() in ("REVIEW", "TODO", "FIXME"):
-                findings.append({
-                    "severity": "high",
-                    "kind": "placeholder_param",
-                    "step_index": step.index,
-                    "message": (
-                        f"Step {step.index} ({step.tool}) has placeholder value "
-                        f"'{v}' for param '{k}'"
-                    ),
-                })
+                findings.append(
+                    {
+                        "severity": "high",
+                        "kind": "placeholder_param",
+                        "step_index": step.index,
+                        "message": (
+                            f"Step {step.index} ({step.tool}) has placeholder value "
+                            f"'{v}' for param '{k}'"
+                        ),
+                    }
+                )
 
         if not is_destructive:
             for k, v in step.params.items():
@@ -88,30 +105,34 @@ def review(wf: Workflow) -> dict[str, Any]:
                     and v in deleted_resources
                     and deleted_resources[v] < step.index
                 ):
-                    findings.append({
-                        "severity": "high",
-                        "kind": "delete_then_use",
-                        "step_index": step.index,
-                        "message": (
-                            f"Step {step.index} references resource '{v}' which "
-                            f"step {deleted_resources[v]} deletes — operation will "
-                            "fail at dispatch"
-                        ),
-                    })
+                    findings.append(
+                        {
+                            "severity": "high",
+                            "kind": "delete_then_use",
+                            "step_index": step.index,
+                            "message": (
+                                f"Step {step.index} references resource '{v}' which "
+                                f"step {deleted_resources[v]} deletes — operation will "
+                                "fail at dispatch"
+                            ),
+                        }
+                    )
 
     # Approval coverage check.
     for d_idx in destructive_indices:
         if not any(a < d_idx for a in approval_indices):
-            findings.append({
-                "severity": "high",
-                "kind": "ungated_destructive",
-                "step_index": d_idx,
-                "message": (
-                    f"Step {d_idx} is destructive but has no preceding "
-                    "require_approval gate — add an approval step or document "
-                    "why this is safe"
-                ),
-            })
+            findings.append(
+                {
+                    "severity": "high",
+                    "kind": "ungated_destructive",
+                    "step_index": d_idx,
+                    "message": (
+                        f"Step {d_idx} is destructive but has no preceding "
+                        "require_approval gate — add an approval step or document "
+                        "why this is safe"
+                    ),
+                }
+            )
 
     # Group integrity
     groups: dict[str, list[int]] = {}
@@ -121,23 +142,27 @@ def review(wf: Workflow) -> dict[str, Any]:
     for gid, indices in groups.items():
         indices.sort()
         if indices != list(range(min(indices), max(indices) + 1)):
-            findings.append({
-                "severity": "medium",
-                "kind": "non_contiguous_group",
-                "step_index": indices[0],
-                "message": f"Parallel group '{gid}' has non-contiguous steps {indices}",
-            })
+            findings.append(
+                {
+                    "severity": "medium",
+                    "kind": "non_contiguous_group",
+                    "step_index": indices[0],
+                    "message": f"Parallel group '{gid}' has non-contiguous steps {indices}",
+                }
+            )
         for i in indices:
             if i in destructive_indices:
-                findings.append({
-                    "severity": "high",
-                    "kind": "destructive_in_parallel_group",
-                    "step_index": i,
-                    "message": (
-                        f"Step {i} is destructive but belongs to parallel group "
-                        f"'{gid}' — concurrent destructive ops bypass approval ordering"
-                    ),
-                })
+                findings.append(
+                    {
+                        "severity": "high",
+                        "kind": "destructive_in_parallel_group",
+                        "step_index": i,
+                        "message": (
+                            f"Step {i} is destructive but belongs to parallel group "
+                            f"'{gid}' — concurrent destructive ops bypass approval ordering"
+                        ),
+                    }
+                )
 
     est_duration_min = (
         len(readonly_indices) * 0.2
@@ -147,9 +172,7 @@ def review(wf: Workflow) -> dict[str, Any]:
     )
     est_duration_min = max(0.5, est_duration_min)
 
-    verdict = "needs_revision" if any(
-        f["severity"] == "high" for f in findings
-    ) else "approved"
+    verdict = "needs_revision" if any(f["severity"] == "high" for f in findings) else "approved"
 
     return {
         "workflow_id": wf.id,

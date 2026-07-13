@@ -1144,7 +1144,7 @@ dependencies = [
     { name = "vmware-policy" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1154,13 +1154,16 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "mcp", extras = ["cli"], specifier = ">=1.0,<2.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0,<10.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0,<8.0" },
     { name = "pyyaml", specifier = ">=6.0,<7.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5,<1.0" },
     { name = "vmware-policy", specifier = ">=1.0.0,<2.0" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=8.0,<10.0" },
+    { name = "pytest-cov", specifier = ">=5.0,<8.0" },
+    { name = "ruff", specifier = ">=0.5,<1.0" },
+]
 
 [[package]]
 name = "vmware-policy"

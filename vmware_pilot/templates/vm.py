@@ -59,7 +59,9 @@ def clone_and_test(
             index=1,
             action="apply_changes",
             skill="aiops",
-            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec else "vm_guest_exec",
+            tool="vm_reconfigure"
+            if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec
+            else "vm_guest_exec",
             params={"vm_name": staging_name, **change_spec, "target": target},
         ),
         WorkflowStep(
@@ -80,7 +82,9 @@ def clone_and_test(
             index=4,
             action="apply_to_production",
             skill="aiops",
-            tool="vm_reconfigure" if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec else "vm_guest_exec",
+            tool="vm_reconfigure"
+            if "cpu" in change_spec or "memory_mb" in change_spec or "memory_gb" in change_spec
+            else "vm_guest_exec",
             params={"vm_name": target_vm, **change_spec, "target": target},
         ),
         WorkflowStep(
@@ -207,46 +211,74 @@ def rolling_restart(
     steps: list[WorkflowStep] = []
     idx = 0
 
-    steps.append(WorkflowStep(
-        index=idx, action="pre_check", skill="monitor",
-        tool="get_alarms", params={"target": target},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="pre_check",
+            skill="monitor",
+            tool="get_alarms",
+            params={"target": target},
+        )
+    )
     idx += 1
 
-    steps.append(WorkflowStep(
-        index=idx, action="require_approval", skill="pilot", tool="approve",
-        params={"message": f"Rolling restart {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Rolling restart {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"
+            },
+        )
+    )
     idx += 1
 
     for vm in vm_names:
-        steps.append(WorkflowStep(
-            index=idx, action=f"power_off_{vm}", skill="aiops",
-            tool="vm_power_off",
-            params={"vm_name": vm, "force": False, "target": target},
-            rollback_tool="vm_power_on",
-            rollback_params={"vm_name": vm, "target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"power_off_{vm}",
+                skill="aiops",
+                tool="vm_power_off",
+                params={"vm_name": vm, "force": False, "target": target},
+                rollback_tool="vm_power_on",
+                rollback_params={"vm_name": vm, "target": target},
+            )
+        )
         idx += 1
 
-        steps.append(WorkflowStep(
-            index=idx, action=f"power_on_{vm}", skill="aiops",
-            tool="vm_power_on",
-            params={"vm_name": vm, "target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"power_on_{vm}",
+                skill="aiops",
+                tool="vm_power_on",
+                params={"vm_name": vm, "target": target},
+            )
+        )
         idx += 1
 
-        steps.append(WorkflowStep(
-            index=idx, action=f"health_check_{vm}", skill="monitor",
-            tool="get_alarms", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"health_check_{vm}",
+                skill="monitor",
+                tool="get_alarms",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="rolling_restart",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="rolling_restart",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"vm_names": vm_names, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -274,38 +306,60 @@ def capacity_expansion(
 
     steps = [
         WorkflowStep(
-            index=0, action="check_capacity", skill="aria",
+            index=0,
+            action="check_capacity",
+            skill="aria",
             tool="get_remaining_capacity",
             params={"resource_id": vm_name, "target": target},
         ),
         WorkflowStep(
-            index=1, action="check_rightsizing", skill="aria",
+            index=1,
+            action="check_rightsizing",
+            skill="aria",
             tool="list_rightsizing_recommendations",
             params={"resource_id": vm_name, "target": target},
         ),
         WorkflowStep(
-            index=2, action="require_approval", skill="pilot", tool="approve",
+            index=2,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
             params={"message": f"Expand '{vm_name}': {', '.join(change_desc)}. Approve?"},
         ),
         WorkflowStep(
-            index=3, action="apply_change", skill="aiops",
+            index=3,
+            action="apply_change",
+            skill="aiops",
             tool="vm_create_plan",
-            params={"operations": [{"action": "reconfigure", "vm_name": vm_name,
-                                    **({"cpu": cpu} if cpu else {}),
-                                    **({"memory_mb": memory_mb} if memory_mb else {})}],
-                    "target": target},
+            params={
+                "operations": [
+                    {
+                        "action": "reconfigure",
+                        "vm_name": vm_name,
+                        **({"cpu": cpu} if cpu else {}),
+                        **({"memory_mb": memory_mb} if memory_mb else {}),
+                    }
+                ],
+                "target": target,
+            },
         ),
         WorkflowStep(
-            index=4, action="verify_health", skill="monitor",
-            tool="get_alarms", params={"target": target},
+            index=4,
+            action="verify_health",
+            skill="monitor",
+            tool="get_alarms",
+            params={"target": target},
         ),
     ]
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="capacity_expansion",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="capacity_expansion",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"vm_name": vm_name, "cpu": cpu, "memory_mb": memory_mb, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -326,34 +380,53 @@ def disaster_recovery(
     now = datetime.now(tz=timezone.utc).isoformat()
     steps = [
         WorkflowStep(
-            index=0, action="require_approval", skill="pilot", tool="approve",
-            params={"message": f"Disaster recovery: revert '{vm_name}' to snapshot '{snapshot_name}'. Confirm?"},
+            index=0,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Disaster recovery: revert '{vm_name}' "
+                f"to snapshot '{snapshot_name}'. Confirm?"
+            },
         ),
         WorkflowStep(
-            index=1, action="revert_snapshot", skill="aiops",
+            index=1,
+            action="revert_snapshot",
+            skill="aiops",
             tool="vm_clean_slate",
             params={"vm_name": vm_name, "snapshot_name": snapshot_name, "target": target},
         ),
         WorkflowStep(
-            index=2, action="verify_vm", skill="monitor",
+            index=2,
+            action="verify_vm",
+            skill="monitor",
             tool="vm_info",
             params={"vm_name": vm_name, "target": target},
         ),
         WorkflowStep(
-            index=3, action="verify_network", skill="nsx",
-            tool="list_segments", params={"target": target},
+            index=3,
+            action="verify_network",
+            skill="nsx",
+            tool="list_segments",
+            params={"target": target},
         ),
         WorkflowStep(
-            index=4, action="verify_health", skill="monitor",
-            tool="get_alarms", params={"target": target},
+            index=4,
+            action="verify_health",
+            skill="monitor",
+            tool="get_alarms",
+            params={"target": target},
         ),
     ]
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="disaster_recovery",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="disaster_recovery",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"vm_name": vm_name, "snapshot_name": snapshot_name, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
 
 
@@ -378,39 +451,72 @@ def patch_deployment(
     steps: list[WorkflowStep] = []
     idx = 0
 
-    steps.append(WorkflowStep(
-        index=idx, action="require_approval", skill="pilot", tool="approve",
-        params={"message": f"Deploy patch to {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Deploy patch to {len(vm_names)} VMs: {', '.join(vm_names)}. Proceed?"
+            },
+        )
+    )
     idx += 1
 
     for vm in vm_names:
-        steps.append(WorkflowStep(
-            index=idx, action=f"upload_{vm}", skill="aiops",
-            tool="vm_guest_upload",
-            params={"vm_name": vm, "local_path": patch_local_path,
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"upload_{vm}",
+                skill="aiops",
+                tool="vm_guest_upload",
+                params={
+                    "vm_name": vm,
+                    "local_path": patch_local_path,
                     "guest_path": patch_guest_path,
-                    "username": username, "password": password, "target": target},
-        ))
+                    "username": username,
+                    "password": password,
+                    "target": target,
+                },
+            )
+        )
         idx += 1
 
-        steps.append(WorkflowStep(
-            index=idx, action=f"install_{vm}", skill="aiops",
-            tool="vm_guest_exec_output",
-            params={"vm_name": vm, "command": install_command,
-                    "username": username, "password": password, "target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"install_{vm}",
+                skill="aiops",
+                tool="vm_guest_exec_output",
+                params={
+                    "vm_name": vm,
+                    "command": install_command,
+                    "username": username,
+                    "password": password,
+                    "target": target,
+                },
+            )
+        )
         idx += 1
 
-        steps.append(WorkflowStep(
-            index=idx, action=f"verify_{vm}", skill="monitor",
-            tool="get_alarms", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action=f"verify_{vm}",
+                skill="monitor",
+                tool="get_alarms",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="patch_deployment",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="patch_deployment",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"vm_names": vm_names, "patch": patch_local_path, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )

@@ -9,7 +9,14 @@ from mcp_server._shared import _get_store, mcp
 from vmware_pilot.review import review as _review_workflow_impl
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="low")
 def review_workflow(workflow_id: str) -> dict:
     """[READ] Sanity-check a planned workflow before execution.
@@ -38,10 +45,21 @@ def review_workflow(workflow_id: str) -> dict:
             return {"error": f"Workflow '{workflow_id}' not found"}
         return _review_workflow_impl(wf)
     except Exception as e:
-        return {"error": str(e), "hint": f"Review failed for '{workflow_id}'. Use get_workflow_status() to inspect raw state."}
+        return {
+            "error": str(e),
+            "hint": f"Review failed for '{workflow_id}'. "
+            f"Use get_workflow_status() to inspect raw state.",
+        }
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="low")
 def get_workflow_status(workflow_id: str) -> dict:
     """[READ] Get current workflow state, diff report, and audit log.
@@ -61,7 +79,14 @@ def get_workflow_status(workflow_id: str) -> dict:
         return {"error": str(e), "hint": "Use list_workflows() to see active workflow IDs."}
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="low")
 def list_workflows() -> dict:
     """[READ] List all available workflow templates (built-in + custom).
@@ -78,13 +103,14 @@ def list_workflows() -> dict:
         from vmware_pilot.templates import BUILTIN_TEMPLATES
 
         builtin = [
-            {"name": name, "type": "builtin", "description": (fn.__doc__ or "").split("\n")[0].strip()}
+            {
+                "name": name,
+                "type": "builtin",
+                "description": (fn.__doc__ or "").split("\n")[0].strip(),
+            }
             for name, fn in BUILTIN_TEMPLATES.items()
         ]
-        custom = [
-            {**c, "type": "custom"}
-            for c in list_custom_workflows()
-        ]
+        custom = [{**c, "type": "custom"} for c in list_custom_workflows()]
 
         active = _get_store().list_active()
 
@@ -96,7 +122,14 @@ def list_workflows() -> dict:
         return {"error": str(e), "hint": "Failed to list workflows."}
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="low")
 def get_skill_catalog() -> dict:
     """[READ] Get the complete catalog of available skills and tools for workflow design.

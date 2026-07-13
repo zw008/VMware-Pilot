@@ -33,37 +33,72 @@ def vks_cluster_deploy(
     now = datetime.now(tz=timezone.utc).isoformat()
     steps = [
         WorkflowStep(
-            index=0, action="create_namespace", skill="vks",
+            index=0,
+            action="create_namespace",
+            skill="vks",
             tool="create_namespace",
-            params={"name": namespace_name, "cluster_id": cluster_id,
-                    "storage_policy": storage_policy, "dry_run": False, "target": target},
+            params={
+                "name": namespace_name,
+                "cluster_id": cluster_id,
+                "storage_policy": storage_policy,
+                "dry_run": False,
+                "target": target,
+            },
             rollback_tool="delete_namespace",
-            rollback_params={"name": namespace_name, "confirmed": True, "dry_run": False, "target": target},
+            rollback_params={
+                "name": namespace_name,
+                "confirmed": True,
+                "dry_run": False,
+                "target": target,
+            },
         ),
         WorkflowStep(
-            index=1, action="require_approval", skill="pilot", tool="approve",
-            params={"message": f"Namespace '{namespace_name}' created. Deploy TKC cluster '{tkc_name}'?"},
+            index=1,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Namespace '{namespace_name}' created. Deploy TKC cluster '{tkc_name}'?"
+            },
         ),
         WorkflowStep(
-            index=2, action="create_tkc", skill="vks",
+            index=2,
+            action="create_tkc",
+            skill="vks",
             tool="create_tkc_cluster",
-            params={"name": tkc_name, "namespace": namespace_name, "k8s_version": k8s_version,
-                    "vm_class": vm_class, "worker_count": worker_count,
-                    "dry_run": False, "target": target},
+            params={
+                "name": tkc_name,
+                "namespace": namespace_name,
+                "k8s_version": k8s_version,
+                "vm_class": vm_class,
+                "worker_count": worker_count,
+                "dry_run": False,
+                "target": target,
+            },
             rollback_tool="delete_tkc_cluster",
-            rollback_params={"name": tkc_name, "namespace": namespace_name,
-                             "confirmed": True, "dry_run": False, "target": target},
+            rollback_params={
+                "name": tkc_name,
+                "namespace": namespace_name,
+                "confirmed": True,
+                "dry_run": False,
+                "target": target,
+            },
         ),
         WorkflowStep(
-            index=3, action="verify_cluster", skill="vks",
+            index=3,
+            action="verify_cluster",
+            skill="vks",
             tool="get_tkc_cluster",
             params={"name": tkc_name, "namespace": namespace_name, "target": target},
         ),
     ]
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="vks_cluster_deploy",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="vks_cluster_deploy",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"namespace": namespace_name, "tkc_name": tkc_name, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )

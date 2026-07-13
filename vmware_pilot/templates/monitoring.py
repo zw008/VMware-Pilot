@@ -100,23 +100,38 @@ def compliance_scan(
     idx = 0
 
     if check_alarms:
-        steps.append(WorkflowStep(
-            index=idx, action="check_alarms", skill="monitor",
-            tool="get_alarms", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="check_alarms",
+                skill="monitor",
+                tool="get_alarms",
+                params={"target": target},
+            )
+        )
         idx += 1
 
     if check_capacity:
-        steps.append(WorkflowStep(
-            index=idx, action="check_capacity", skill="aria",
-            tool="get_capacity_overview", params={"target": target},
-        ))
+        steps.append(
+            WorkflowStep(
+                index=idx,
+                action="check_capacity",
+                skill="aria",
+                tool="get_capacity_overview",
+                params={"target": target},
+            )
+        )
         idx += 1
 
-    steps.append(WorkflowStep(
-        index=idx, action="check_anomalies", skill="aria",
-        tool="list_anomalies", params={"target": target},
-    ))
+    steps.append(
+        WorkflowStep(
+            index=idx,
+            action="check_anomalies",
+            skill="aria",
+            tool="list_anomalies",
+            params={"target": target},
+        )
+    )
 
     return Workflow(
         id=new_workflow_id(),
@@ -170,26 +185,34 @@ def investigate_alert(
 
     round1 = [
         WorkflowStep(
-            index=0, action="gather_alarms",
-            skill="monitor", tool="list_alarms",
+            index=0,
+            action="gather_alarms",
+            skill="monitor",
+            tool="list_alarms",
             params={"entity_name": alert_entity, "target": target},
         ),
         WorkflowStep(
-            index=1, action="gather_events",
-            skill="monitor", tool="list_events",
+            index=1,
+            action="gather_events",
+            skill="monitor",
+            tool="list_events",
             params={"hours": 2, "entity_name": alert_entity, "target": target},
         ),
         WorkflowStep(
-            index=2, action="gather_aria_alerts",
-            skill="aria", tool="list_alerts",
+            index=2,
+            action="gather_aria_alerts",
+            skill="aria",
+            tool="list_alerts",
             params={"resource_name": alert_entity, "target": target},
         ),
     ]
     parallel_group("round1-gather", round1)
 
     checkpoint1 = WorkflowStep(
-        index=3, action="require_approval",
-        skill="pilot", tool="approve",
+        index=3,
+        action="require_approval",
+        skill="pilot",
+        tool="approve",
         params={
             "message": (
                 f"Round 1 evidence gathered for '{label}'. "
@@ -206,26 +229,34 @@ def investigate_alert(
     if deep_dive:
         round2 = [
             WorkflowStep(
-                index=4, action="gather_anomalies",
-                skill="aria", tool="list_anomalies",
+                index=4,
+                action="gather_anomalies",
+                skill="aria",
+                tool="list_anomalies",
                 params={"resource_name": alert_entity, "target": target},
             ),
             WorkflowStep(
-                index=5, action="gather_capacity",
-                skill="aria", tool="capacity_overview",
+                index=5,
+                action="gather_capacity",
+                skill="aria",
+                tool="capacity_overview",
                 params={"resource_name": alert_entity, "target": target},
             ),
             WorkflowStep(
-                index=6, action="gather_recent_alerts",
-                skill="aria", tool="list_alerts",
+                index=6,
+                action="gather_recent_alerts",
+                skill="aria",
+                tool="list_alerts",
                 params={"hours": 24, "target": target},
             ),
         ]
         parallel_group("round2-gather", round2)
 
         checkpoint2 = WorkflowStep(
-            index=7, action="require_approval",
-            skill="pilot", tool="approve",
+            index=7,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
             params={
                 "message": (
                     f"Round 2 evidence gathered for '{label}'. "

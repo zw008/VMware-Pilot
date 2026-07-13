@@ -110,15 +110,17 @@ def _make_loader(spec: dict[str, Any], source: Path) -> Any:
             step_params = _substitute(raw.get("params", {}), params)
             rollback_params = _substitute(raw.get("rollback_params", {}), params)
 
-            steps.append(WorkflowStep(
-                index=i,
-                action=raw.get("action", f"step_{i}"),
-                skill=raw.get("skill", "unknown"),
-                tool=raw.get("tool", "unknown"),
-                params=step_params,
-                rollback_tool=raw.get("rollback_tool", ""),
-                rollback_params=rollback_params,
-            ))
+            steps.append(
+                WorkflowStep(
+                    index=i,
+                    action=raw.get("action", f"step_{i}"),
+                    skill=raw.get("skill", "unknown"),
+                    tool=raw.get("tool", "unknown"),
+                    params=step_params,
+                    rollback_tool=raw.get("rollback_tool", ""),
+                    rollback_params=rollback_params,
+                )
+            )
 
         return Workflow(
             id=new_workflow_id(),
@@ -142,10 +144,12 @@ def _make_loader(spec: dict[str, Any], source: Path) -> Any:
 def _substitute(obj: Any, params: dict[str, Any]) -> Any:
     """Recursively substitute {{var}} placeholders in dicts/lists/strings."""
     if isinstance(obj, str):
+
         def _replace(m: re.Match) -> str:
             key = m.group(1)
             val = params.get(key, m.group(0))  # keep placeholder if not found
             return str(val)
+
         return _VAR_PATTERN.sub(_replace, obj)
 
     if isinstance(obj, dict):
@@ -173,12 +177,14 @@ def list_custom_workflows() -> list[dict[str, str]]:
             with open(path) as fh:
                 spec = yaml.safe_load(fh)
             if spec and "name" in spec:
-                result.append({
-                    "name": spec["name"],
-                    "description": spec.get("description", ""),
-                    "file": path.name,
-                    "steps": len(spec.get("steps", [])),
-                })
+                result.append(
+                    {
+                        "name": spec["name"],
+                        "description": spec.get("description", ""),
+                        "file": path.name,
+                        "steps": len(spec.get("steps", [])),
+                    }
+                )
         except Exception:
             pass
 

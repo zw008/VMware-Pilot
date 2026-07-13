@@ -15,7 +15,14 @@ from vmware_pilot.templates import get_all_templates
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="medium")
 def plan_workflow(
     workflow_type: str,
@@ -32,7 +39,8 @@ def plan_workflow(
     Args:
         workflow_type: One of the available workflow types.
         params: Workflow-specific parameters.
-            clone_and_test: target_vm (str), change_spec (dict), monitor_minutes (int), target (str).
+            clone_and_test: target_vm (str), change_spec (dict), monitor_minutes (int),
+                target (str).
             incident_response: alert_entity (str), alert_name (str), target (str).
             plan_and_approve: operations (list[dict]), target (str), description (str).
             compliance_scan: target (str), check_alarms (bool), check_capacity (bool).
@@ -44,7 +52,10 @@ def plan_workflow(
         templates = get_all_templates()
         template_fn = templates.get(workflow_type)
         if not template_fn:
-            return {"error": f"Unknown workflow type: {workflow_type}. Available: {list(templates.keys())}"}
+            return {
+                "error": f"Unknown workflow type: {workflow_type}. "
+                f"Available: {list(templates.keys())}"
+            }
 
         wf = template_fn(**params)
         _get_store().save(wf)
@@ -61,10 +72,21 @@ def plan_workflow(
             "message": f"Plan created. Call run_workflow('{wf.id}') to execute.",
         }
     except Exception as e:
-        return {"error": str(e), "hint": "Check workflow_type and params. Use list_workflows() to see available templates."}
+        return {
+            "error": str(e),
+            "hint": "Check workflow_type and params. "
+            "Use list_workflows() to see available templates.",
+        }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="medium")
 def run_workflow(workflow_id: str, force: bool = False) -> dict:
     """[WRITE] Advance a planned workflow. Pauses at approval gates.
@@ -116,7 +138,8 @@ def run_workflow(workflow_id: str, force: bool = False) -> dict:
         # ── Approval-gate enforcement (not just advisory) ─────────────
         review_result = _review_workflow_impl(wf)
         blocking = [
-            f for f in review_result.get("findings", [])
+            f
+            for f in review_result.get("findings", [])
             if f.get("kind") in ("ungated_destructive", "destructive_in_parallel_group")
         ]
         if blocking:
@@ -144,16 +167,28 @@ def run_workflow(workflow_id: str, force: bool = False) -> dict:
             )
             logger.warning(
                 "Workflow %s forced past %d blocking review findings",
-                workflow_id, len(blocking),
+                workflow_id,
+                len(blocking),
             )
             _get_store().save(wf)
 
         return _get_executor().run_until_checkpoint(wf)
     except Exception as e:
-        return {"error": str(e), "hint": f"Workflow '{workflow_id}' execution failed. Use get_workflow_status() to check state, or rollback()."}
+        return {
+            "error": str(e),
+            "hint": f"Workflow '{workflow_id}' execution failed. "
+            f"Use get_workflow_status() to check state, or rollback().",
+        }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="high")
 def approve(workflow_id: str, approver: str = "") -> dict:
     """[WRITE] Approve a workflow that is waiting for human confirmation.
@@ -182,10 +217,21 @@ def approve(workflow_id: str, approver: str = "") -> dict:
         # cannot bypass the audit-trail requirement.
         return _get_executor().resume_after_approval(wf, approver=approver)
     except Exception as e:
-        return {"error": str(e), "hint": f"Approval failed for '{workflow_id}'. Use get_workflow_status() to check state."}
+        return {
+            "error": str(e),
+            "hint": f"Approval failed for '{workflow_id}'. "
+            f"Use get_workflow_status() to check state.",
+        }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": True,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="high")
 def rollback(workflow_id: str) -> dict:
     """[WRITE] Abort a workflow and rollback completed steps in reverse order.
@@ -209,10 +255,21 @@ def rollback(workflow_id: str) -> dict:
 
         return _get_executor().rollback(wf)
     except Exception as e:
-        return {"error": str(e), "hint": f"Rollback failed for '{workflow_id}'. Use get_workflow_status() to check state."}
+        return {
+            "error": str(e),
+            "hint": f"Rollback failed for '{workflow_id}'. "
+            f"Use get_workflow_status() to check state.",
+        }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="high")
 def cancel_workflow(workflow_id: str, reason: str = "") -> dict:
     """[WRITE] Cancel a workflow — move it to the terminal CANCELLED state.
@@ -243,4 +300,7 @@ def cancel_workflow(workflow_id: str, reason: str = "") -> dict:
 
         return _get_executor().cancel(wf, reason=reason)
     except Exception as e:
-        return {"error": str(e), "hint": f"Cancel failed for '{workflow_id}'. Use get_workflow_status() to check state."}
+        return {
+            "error": str(e),
+            "hint": f"Cancel failed for '{workflow_id}'. Use get_workflow_status() to check state.",
+        }

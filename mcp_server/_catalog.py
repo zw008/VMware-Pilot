@@ -73,7 +73,10 @@ SKILL_CATALOG = {
             "get_remaining_capacity": {"risk": "low", "desc": "CPU/mem/disk remaining"},
             "get_time_remaining": {"risk": "low", "desc": "Days until capacity exhaustion"},
             "list_anomalies": {"risk": "low", "desc": "ML-detected metric anomalies"},
-            "list_rightsizing_recommendations": {"risk": "low", "desc": "Over/under-provisioned VMs"},
+            "list_rightsizing_recommendations": {
+                "risk": "low",
+                "desc": "Over/under-provisioned VMs",
+            },
         },
     },
     "vks": {

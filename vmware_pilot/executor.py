@@ -15,8 +15,9 @@ state ``completed``.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 from vmware_pilot.models import (
     REDACTED_PLACEHOLDER,
@@ -123,8 +124,7 @@ class WorkflowExecutor:
                 wf.state = WorkflowState.FAILED
                 wf.log(
                     "interrupted_step_detected",
-                    f"Step {step.index}: {step.tool} was 'running' when a "
-                    "previous run died",
+                    f"Step {step.index}: {step.tool} was 'running' when a previous run died",
                 )
                 self._store.save(wf)
                 result = wf.to_dict()
@@ -310,12 +310,14 @@ class WorkflowExecutor:
         wf.rollback_results = rollback_results
         for step in reversed(wf.completed_steps()):
             if not step.rollback_tool:
-                rollback_results.append({
-                    "step": step.index,
-                    "tool": step.tool,
-                    "status": "skipped",
-                    "reason": "no rollback defined",
-                })
+                rollback_results.append(
+                    {
+                        "step": step.index,
+                        "tool": step.tool,
+                        "status": "skipped",
+                        "reason": "no rollback defined",
+                    }
+                )
                 continue
 
             try:
@@ -324,20 +326,24 @@ class WorkflowExecutor:
                 )
                 result = self._dispatch(step.skill, step.rollback_tool, resolved_rb)
                 step.status = "rolled_back"
-                rollback_results.append({
-                    "step": step.index,
-                    "tool": step.rollback_tool,
-                    "status": "success",
-                    "result": result,
-                })
+                rollback_results.append(
+                    {
+                        "step": step.index,
+                        "tool": step.rollback_tool,
+                        "status": "success",
+                        "result": result,
+                    }
+                )
                 wf.log("rollback_step", f"Step {step.index}: {step.rollback_tool} → success")
             except Exception as exc:
-                rollback_results.append({
-                    "step": step.index,
-                    "tool": step.rollback_tool,
-                    "status": "failed",
-                    "error": str(exc),
-                })
+                rollback_results.append(
+                    {
+                        "step": step.index,
+                        "tool": step.rollback_tool,
+                        "status": "failed",
+                        "error": str(exc),
+                    }
+                )
                 wf.log("rollback_failed", f"Step {step.index}: {step.rollback_tool} → {exc}")
                 # Continue rolling back other steps even if one fails
 
@@ -415,7 +421,7 @@ class WorkflowExecutor:
 
         def _resolve_ref(v: str) -> Any:
             if v.endswith("__"):
-                idx_part = v[len("__from_step_"):-2]
+                idx_part = v[len("__from_step_") : -2]
                 result_key: str | None = None
             else:
                 ref_part, sep, result_key = v.partition(":")
@@ -424,14 +430,13 @@ class WorkflowExecutor:
                         f"Malformed step reference '{v}'. Expected "
                         "'__from_step_N__' or '__from_step_N__:key'."
                     )
-                idx_part = ref_part[len("__from_step_"):-2]
+                idx_part = ref_part[len("__from_step_") : -2]
 
             try:
                 idx = int(idx_part)
             except ValueError:
                 raise ValueError(
-                    f"Malformed step reference '{v}': '{idx_part}' is not an "
-                    "integer step index."
+                    f"Malformed step reference '{v}': '{idx_part}' is not an integer step index."
                 ) from None
 
             if idx < 0 or idx >= len(steps):

@@ -18,7 +18,14 @@ from mcp_server._shared import (
 logger = logging.getLogger(__name__)
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="medium")
 def create_workflow(
     name: str,
@@ -80,20 +87,25 @@ def create_workflow(
         if save_as_template:
             name_error = _validate_template_name(name)
             if name_error:
-                return {"error": name_error, "hint": "Choose a simple name like 'network_segment_setup'."}
+                return {
+                    "error": name_error,
+                    "hint": "Choose a simple name like 'network_segment_setup'.",
+                }
 
         now = datetime.now(tz=timezone.utc).isoformat()
         wf_steps = []
         for i, s in enumerate(steps):
-            wf_steps.append(WorkflowStep(
-                index=i,
-                action=s.get("action", f"step_{i}"),
-                skill=s.get("skill", "unknown"),
-                tool=s.get("tool", "unknown"),
-                params=s.get("params", {}),
-                rollback_tool=s.get("rollback_tool", ""),
-                rollback_params=s.get("rollback_params", {}),
-            ))
+            wf_steps.append(
+                WorkflowStep(
+                    index=i,
+                    action=s.get("action", f"step_{i}"),
+                    skill=s.get("skill", "unknown"),
+                    tool=s.get("tool", "unknown"),
+                    params=s.get("params", {}),
+                    rollback_tool=s.get("rollback_tool", ""),
+                    rollback_params=s.get("rollback_params", {}),
+                )
+            )
 
         wf = Workflow(
             id=new_workflow_id(),
@@ -125,7 +137,14 @@ def create_workflow(
         return {"error": str(e), "hint": "Failed to create workflow. Check step definitions."}
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="low")
 def design_workflow(
     goal: str,
@@ -187,7 +206,14 @@ def design_workflow(
     }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="medium")
 def update_draft(
     workflow_id: str,
@@ -247,15 +273,27 @@ def update_draft(
         "workflow_type": wf.workflow_type,
         "state": "draft",
         "steps": [
-            {"index": s.index, "action": s.action, "skill": s.skill, "tool": s.tool,
-             "has_rollback": bool(s.rollback_tool)}
+            {
+                "index": s.index,
+                "action": s.action,
+                "skill": s.skill,
+                "tool": s.tool,
+                "has_rollback": bool(s.rollback_tool),
+            }
             for s in wf.steps
         ],
         "message": "Draft updated. Show to user for review. Call confirm_draft() when approved.",
     }
 
 
-@mcp.tool(annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": True})
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": True,
+    }
+)
 @vmware_tool(risk_level="medium")
 def confirm_draft(
     workflow_id: str,
@@ -290,7 +328,10 @@ def confirm_draft(
         if will_save_template:
             name_error = _validate_template_name(wf.workflow_type)
             if name_error:
-                return {"error": name_error, "hint": "Rename the draft via update_draft(name=...) first."}
+                return {
+                    "error": name_error,
+                    "hint": "Rename the draft via update_draft(name=...) first.",
+                }
 
         wf.state = WorkflowState.PENDING
         wf.log("draft_confirmed", f"Confirmed with {len(wf.steps)} steps")
@@ -299,10 +340,15 @@ def confirm_draft(
         if will_save_template:
             steps_for_yaml = [
                 {
-                    "action": s.action, "skill": s.skill, "tool": s.tool,
+                    "action": s.action,
+                    "skill": s.skill,
+                    "tool": s.tool,
                     "params": s.params,
-                    **({"rollback_tool": s.rollback_tool, "rollback_params": s.rollback_params}
-                       if s.rollback_tool else {}),
+                    **(
+                        {"rollback_tool": s.rollback_tool, "rollback_params": s.rollback_params}
+                        if s.rollback_tool
+                        else {}
+                    ),
                 }
                 for s in wf.steps
             ]
@@ -317,4 +363,8 @@ def confirm_draft(
             "message": f"Workflow confirmed. Call run_workflow('{wf.id}') to execute.",
         }
     except Exception as e:
-        return {"error": str(e), "hint": f"Failed to confirm draft '{workflow_id}'. Use get_workflow_status() to inspect it."}
+        return {
+            "error": str(e),
+            "hint": f"Failed to confirm draft '{workflow_id}'. "
+            f"Use get_workflow_status() to inspect it.",
+        }

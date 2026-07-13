@@ -40,7 +40,9 @@ class WorkflowStep:
     completed_at: str = ""
     rollback_tool: str = ""
     rollback_params: dict[str, Any] = field(default_factory=dict)
-    group_id: str = ""  # non-empty = parallel-group sibling; agent may dispatch concurrently with peers
+    group_id: str = (
+        ""  # non-empty = parallel-group sibling; agent may dispatch concurrently with peers
+    )
 
 
 @dataclass
@@ -59,11 +61,13 @@ class Workflow:
     rollback_results: list[dict[str, Any]] = field(default_factory=list)
 
     def log(self, action: str, detail: str = "") -> None:
-        self.audit_log.append({
-            "ts": datetime.now(tz=timezone.utc).isoformat(),
-            "action": action,
-            "detail": detail,
-        })
+        self.audit_log.append(
+            {
+                "ts": datetime.now(tz=timezone.utc).isoformat(),
+                "action": action,
+                "detail": detail,
+            }
+        )
         self.updated_at = datetime.now(tz=timezone.utc).isoformat()
 
     def current_step(self) -> WorkflowStep | None:
@@ -102,10 +106,22 @@ CREATE TABLE IF NOT EXISTS workflows (
 
 
 # Parameter keys whose values must never be written to the state DB.
-_SENSITIVE_KEYS = frozenset({
-    "password", "passwd", "pwd", "token", "secret", "api_key", "apikey",
-    "authorization", "bearer", "private_key", "credential", "credentials",
-})
+_SENSITIVE_KEYS = frozenset(
+    {
+        "password",
+        "passwd",
+        "pwd",
+        "token",
+        "secret",
+        "api_key",
+        "apikey",
+        "authorization",
+        "bearer",
+        "private_key",
+        "credential",
+        "credentials",
+    }
+)
 
 
 # Placeholder written to the DB in place of a redacted secret value.
@@ -129,8 +145,7 @@ def _redact_for_persistence(obj: Any) -> Any:
     """
     if isinstance(obj, dict):
         return {
-            k: (REDACTED_PLACEHOLDER if is_sensitive_key(k)
-                else _redact_for_persistence(v))
+            k: (REDACTED_PLACEHOLDER if is_sensitive_key(k) else _redact_for_persistence(v))
             for k, v in obj.items()
         }
     if isinstance(obj, list):
@@ -190,8 +205,7 @@ class WorkflowStore:
             conn.execute(
                 "INSERT OR REPLACE INTO workflows (id, type, state, data, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (wf.id, wf.workflow_type, wf.state.value, data,
-                 wf.created_at, wf.updated_at),
+                (wf.id, wf.workflow_type, wf.state.value, data, wf.created_at, wf.updated_at),
             )
             conn.commit()
         # Cache the live object so a load() in this process returns the
@@ -203,9 +217,7 @@ class WorkflowStore:
         if cached is not None:
             return cached
         with closing(self._connect()) as conn:
-            row = conn.execute(
-                "SELECT data FROM workflows WHERE id = ?", (workflow_id,)
-            ).fetchone()
+            row = conn.execute("SELECT data FROM workflows WHERE id = ?", (workflow_id,)).fetchone()
         if not row:
             return None
         return _from_dict(json.loads(row[0]))
@@ -225,7 +237,8 @@ class WorkflowStore:
         with closing(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT id, type, state, created_at, updated_at FROM workflows "
-                "ORDER BY created_at DESC LIMIT ?", (limit,)
+                "ORDER BY created_at DESC LIMIT ?",
+                (limit,),
             ).fetchall()
         return [
             {"id": r[0], "type": r[1], "state": r[2], "created_at": r[3], "updated_at": r[4]}

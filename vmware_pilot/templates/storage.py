@@ -31,42 +31,70 @@ def storage_expansion(
     now = datetime.now(tz=timezone.utc).isoformat()
     steps = [
         WorkflowStep(
-            index=0, action="check_iscsi_status", skill="storage",
+            index=0,
+            action="check_iscsi_status",
+            skill="storage",
             tool="storage_iscsi_status",
             params={"host_name": host_name, "target": target},
         ),
         WorkflowStep(
-            index=1, action="enable_iscsi", skill="storage",
+            index=1,
+            action="enable_iscsi",
+            skill="storage",
             tool="storage_iscsi_enable",
             params={"host_name": host_name, "target": target},
         ),
         WorkflowStep(
-            index=2, action="require_approval", skill="pilot", tool="approve",
-            params={"message": f"Add iSCSI target {iscsi_address}:{iscsi_port} to '{host_name}'. Approve?"},
+            index=2,
+            action="require_approval",
+            skill="pilot",
+            tool="approve",
+            params={
+                "message": f"Add iSCSI target {iscsi_address}:{iscsi_port} "
+                f"to '{host_name}'. Approve?"
+            },
         ),
         WorkflowStep(
-            index=3, action="add_iscsi_target", skill="storage",
+            index=3,
+            action="add_iscsi_target",
+            skill="storage",
             tool="storage_iscsi_add_target",
-            params={"host_name": host_name, "address": iscsi_address,
-                    "port": iscsi_port, "target": target},
+            params={
+                "host_name": host_name,
+                "address": iscsi_address,
+                "port": iscsi_port,
+                "target": target,
+            },
             rollback_tool="storage_iscsi_remove_target",
-            rollback_params={"host_name": host_name, "address": iscsi_address,
-                             "port": iscsi_port, "target": target},
+            rollback_params={
+                "host_name": host_name,
+                "address": iscsi_address,
+                "port": iscsi_port,
+                "target": target,
+            },
         ),
         WorkflowStep(
-            index=4, action="rescan_storage", skill="storage",
+            index=4,
+            action="rescan_storage",
+            skill="storage",
             tool="storage_rescan",
             params={"host_name": host_name, "target": target},
         ),
         WorkflowStep(
-            index=5, action="verify_datastores", skill="storage",
-            tool="list_all_datastores", params={"target": target},
+            index=5,
+            action="verify_datastores",
+            skill="storage",
+            tool="list_all_datastores",
+            params={"target": target},
         ),
     ]
 
     return Workflow(
-        id=new_workflow_id(), workflow_type="storage_expansion",
-        state=WorkflowState.PENDING, steps=steps,
+        id=new_workflow_id(),
+        workflow_type="storage_expansion",
+        state=WorkflowState.PENDING,
+        steps=steps,
         params={"host_name": host_name, "iscsi_address": iscsi_address, "target": target},
-        created_at=now, updated_at=now,
+        created_at=now,
+        updated_at=now,
     )
