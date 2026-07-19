@@ -191,6 +191,57 @@ vmware-avi doctor
 
 ---
 
+## Read-Only Mode
+
+Off by default. When it is on, every write tool is removed from the MCP registry at
+start-up, so `list_tools()` never offers it — the guarantee is structural rather than a
+prompt instruction the model may ignore.
+
+**Pilot has no config file, so the environment is the only switch.** There is no
+`read_only:` setting to write. Precedence:
+
+| Priority | Signal | Scope |
+|---|---|---|
+| 1 | `VMWARE_PILOT_READ_ONLY` | This skill only |
+| 2 | `VMWARE_READ_ONLY` | Every installed VMware skill |
+| 3 | (nothing set) | Off |
+
+```json
+{
+  "mcpServers": {
+    "vmware-pilot": {
+      "command": "vmware-pilot",
+      "args": ["mcp"],
+      "env": { "VMWARE_PILOT_READ_ONLY": "true" }
+    }
+  }
+}
+```
+
+**Know what you are locking.** Orchestration is pilot's write surface: 9 of its 13 tools
+are withheld — `design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`,
+`create_workflow`, `run_workflow`, `approve`, `rollback`, `cancel_workflow`. Only
+`list_workflows`, `get_skill_catalog`, `get_workflow_status` and `review_workflow`
+survive, so the server can inspect existing workflows and nothing else. To protect the
+estate while keeping orchestration, set the family variable on and the per-skill variable
+off — `{"VMWARE_READ_ONLY": "true", "VMWARE_PILOT_READ_ONLY": "false"}` — and let each
+downstream skill enforce the lock on its own tools.
+
+**Fail-closed.** If the mode is requested but cannot be *proven*, the server refuses to
+start with `ReadOnlyGateError`: the FastMCP tool registry cannot be enumerated (usually an
+incompatible `mcp` version), or a removal did not take effect. One case does *not* abort —
+an unparseable value (`VMWARE_PILOT_READ_ONLY=ture`) resolves to **on** with a warning
+naming the accepted values, so a typo locks the deployment down rather than leaving it
+open.
+
+**Verifying.** Pilot ships no `doctor` command; the start-up log is the record. The server
+logs a warning naming every withheld tool when the mode engages, and `list_workflows` /
+`get_workflow_status` remaining while `run_workflow` is absent is the same signal from the
+client side. Companion skills with a `doctor` (e.g. `vmware-log-insight doctor`) report
+their own resolved state and where it came from.
+
+---
+
 ## Security
 
 ### Source Code
