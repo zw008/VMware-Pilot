@@ -2,15 +2,15 @@
 name: vmware-pilot
 description: >
   Use this skill whenever the user wants to design, execute, or manage complex multi-step VMware workflows with human approval and automatic rollback.
-  Pilot is the orchestration brain — it breaks down a user's goal into steps across multiple VMware skills (aiops, monitor, nsx, aria, vks, storage, avi), adds approval gates before destructive operations, and rolls back automatically if anything fails.
-  Always use vmware-pilot for: "clone and test before applying to production", "VMware incident response with checkpoints", "investigate alert root cause", "set up VMware infrastructure using multiple skills", "VMware rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", "AKO-aware app deployment", or any VMware workflow needing approval gates or rollback.
-  15 built-in templates + custom YAML + AI-designed workflows from 185 available tools across 8 skills.
-  For single VM operations use vmware-aiops, for read-only queries use vmware-monitor, for load balancer operations use vmware-avi.
+  Pilot is the orchestration brain — it breaks a goal into steps across companion VMware skills (aiops, monitor, nsx, nsx-security, aria, vks, storage, avi), adds approval gates before destructive operations, and rolls back automatically if anything fails.
+  Always use vmware-pilot for: "clone and test before applying to production", "VMware incident response with checkpoints", "investigate alert root cause", "VMware rolling restart with health checks", "baseline capture and drift detection", "rolling maintenance with AVI drain", or any VMware workflow needing approval gates or rollback.
+  15 built-in templates + custom YAML + AI-designed workflows.
+  Do NOT use for single-step work — use vmware-aiops for one VM action, vmware-monitor for read-only queries, vmware-avi for load balancer queries.
 installer:
   kind: uv
   package: vmware-pilot
 allowed-tools: [Bash]
-metadata: {"openclaw":{"requires":{"env":["VMWARE_PILOT_CONFIG"],"bins":["vmware-pilot-mcp"]},"primaryEnv":"VMWARE_PILOT_CONFIG","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
+metadata: {"openclaw":{"requires":{"bins":["vmware-pilot"]},"optional":{"env":["VMWARE_PILOT_READ_ONLY","VMWARE_READ_ONLY","VMWARE_AUDIT_APPROVED_BY"]},"primaryEnv":"NONE","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
 compatibility: >
   vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All workflow operations audited to ~/.vmware/audit.db.
   No direct vCenter/NSX credentials: Pilot is an orchestration layer that delegates to companion skills (aiops, monitor, nsx, etc.) which handle their own auth.
@@ -31,7 +31,7 @@ Multi-step workflow orchestration for VMware MCP skills — design, approve, exe
 
 | Capability | Description |
 |---|---|
-| Workflow Design | Natural language goal → AI designs steps from 8 skills' 185 tools |
+| Workflow Design | Natural language goal → AI designs steps from the `get_skill_catalog` building-block list (69 curated tools across 8 skills) |
 | Approval Gates | Pause execution for human review before destructive operations |
 | State Persistence | SQLite-backed, survives restarts, supports resume from checkpoint |
 | Rollback | Reverse completed steps in order if workflow fails |
@@ -41,9 +41,8 @@ Multi-step workflow orchestration for VMware MCP skills — design, approve, exe
 ## Quick Install
 
 ```bash
-pip install vmware-pilot
-# or
-uvx --from vmware-pilot vmware-pilot-mcp
+uv tool install vmware-pilot
+vmware-pilot mcp          # start the MCP server (stdio)
 ```
 
 ## When to Use This Skill
@@ -145,6 +144,8 @@ Deploy a backend VM, create a K8s namespace, and wire up AKO Ingress to the AVI 
 
 This is intentional v2-style architecture: pilot's context stays small, state is always on disk, and there are no persistent agent threads. Full contract details: see [`references/integration-patterns.md`](references/integration-patterns.md#the-dispatch-contract).
 
+**`get_skill_catalog` is a curated design aid, not a whitelist.** It surfaces 69 hand-picked building blocks across 8 skills — a deliberate subset of what those skills expose (aiops alone has 49 tools; the catalog lists 18). A step's `skill` field is a free-form string handed to the calling agent, so a workflow may name any companion skill, including ones the catalog does not list — pilot itself (`pilot`) is used that way by built-in templates for approval gates. Use the catalog for inspiration; consult the target skill's own SKILL.md for its full tool surface.
+
 ## MCP Tools (13 — 4 read, 9 write/control)
 
 | Category | Tool | Risk | Description |
@@ -218,18 +219,20 @@ steps:
 | Local/small models (Ollama, Qwen) | **MCP** | Structured JSON I/O for multi-step state |
 | Cloud models (Claude, GPT-4o) | **MCP** | Design mode needs structured tool calls |
 | CI/CD pipeline orchestration | **MCP** | Programmatic plan/approve/run cycle |
-| Quick template listing | **CLI** | `vmware-pilot-mcp` is MCP-only; use MCP client |
+| Quick template listing | **MCP** | Call `list_workflows`; the CLI has no template commands |
 
-> Note: vmware-pilot is MCP-only (no standalone CLI). All interactions go through MCP tool calls.
-> Other skills in the family (aiops, monitor, avi, etc.) offer both CLI and MCP modes.
+> Note: every workflow operation — design, plan, run, approve, rollback — is MCP-only.
+> The `vmware-pilot` CLI exists to launch the server and report its version, nothing more.
+> Other skills in the family (aiops, monitor, avi, etc.) offer full CLI and MCP modes.
 
 ## CLI Quick Reference
 
-vmware-pilot is an MCP-only server (no standalone CLI binary). Interact via MCP tool calls:
+The CLI is a launcher, not a second interface to workflows:
 
 ```bash
-# Start the MCP server
-uvx --from vmware-pilot vmware-pilot-mcp
+vmware-pilot mcp        # start the MCP server (stdio)
+vmware-pilot version    # print installed version
+vmware-pilot --help
 
 # Validate a custom workflow YAML before loading
 python3 scripts/validate_workflow.py ~/.vmware/workflows/my_workflow.yaml
@@ -276,12 +279,17 @@ No vCenter credentials needed — pilot orchestrates other skills that handle co
 {
   "mcpServers": {
     "vmware-pilot": {
-      "command": "uvx",
-      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+      "command": "vmware-pilot",
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+> Fallback: `{"command": "uvx", "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]}` also
+> works, but `uvx` re-resolves the package against PyPI on every start and fails behind a
+> TLS-inspecting corporate proxy (`invalid peer certificate: UnknownIssuer`). The installed
+> entry point above touches the network zero times; set `UV_NATIVE_TLS=true` if you must use `uvx`.
 
 ## Audit & Safety
 
@@ -289,6 +297,7 @@ All operations are automatically audited via vmware-policy (`@vmware_tool` decor
 - Every tool call logged to `~/.vmware/audit.db` (SQLite, framework-agnostic)
 - Policy rules enforced via `~/.vmware/rules.yaml` (deny rules, maintenance windows, risk levels)
 - Risk classification: each tool tagged as low/medium/high/critical
+- Environment scoping: policy rules apply per environment, and skills with a config declare `environment:` per target. Pilot has no targets of its own and reports a constant `local` — its writes go to the local workflow DB, never to a VMware estate. The approval gate on the real change is not skipped: it applies downstream when the agent performs each step through the target skill's own MCP tool, against that skill's declared environment
 - View recent operations: `vmware-audit log --last 20`
 - View denied operations: `vmware-audit log --status denied`
 

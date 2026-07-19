@@ -24,15 +24,17 @@
 ## 安装
 
 ```bash
-pip install vmware-pilot
+uv tool install vmware-pilot
+vmware-pilot mcp          # 启动 MCP server（stdio）
 ```
 
-## MCP 工具
+## MCP 工具（13 个 — 4 读 / 9 写）
 
 | 工具 | 说明 |
 |------|------|
 | `get_skill_catalog` | 获取所有可用技能和工具（用于工作流设计） |
 | `list_workflows` | 列出内置模板和自定义模板 |
+| `review_workflow` | 执行前对已规划的工作流做合理性检查 |
 | `design_workflow` | 自然语言目标 → 草稿工作流 |
 | `update_draft` | 编辑草稿工作流的步骤 |
 | `confirm_draft` | 确认草稿 → 可执行状态 |
@@ -42,6 +44,9 @@ pip install vmware-pilot
 | `get_workflow_status` | 查询状态 + 差异报告 + 审计日志 |
 | `approve` | 人工审批，继续执行 |
 | `rollback` | 中止并按逆序回滚已完成的步骤 |
+| `cancel_workflow` | 取消工作流，置为终态 CANCELLED |
+
+- **只读模式**（v1.8.0）—— 一个环境变量即可从 MCP 注册表移除全部 9 个编排类写工具（设计/编辑草稿/确认草稿、规划/创建、执行、审批、回滚、取消），只保留 4 个查询工具；本仓没有配置文件，环境变量是唯一开关，详见[只读模式](#只读模式)
 
 ## 内置模板（14 个）
 
@@ -68,12 +73,64 @@ pip install vmware-pilot
 {
   "mcpServers": {
     "vmware-pilot": {
-      "command": "uvx",
-      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+      "command": "vmware-pilot",
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+> 备用方式：`{"command": "uvx", "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]}` 同样可用，
+> 但 `uvx` 每次启动都会重新到 PyPI 解析包，在有 TLS 中间人代理的企业网络下会失败
+> （`invalid peer certificate: UnknownIssuer`）。上面的入口点走 PATH，完全不联网；
+> 若必须用 `uvx`，请设置 `UV_NATIVE_TLS=true`。
+
+## 只读模式
+
+提示词约束只是建议——模型可以无视它。只读模式是结构性的：开启后，所有写工具会在启动时从 MCP 注册表中移除，`list_tools()` 根本不会列出它们——模型看不见的工具就无法调用。默认关闭；且为 fail-closed 设计：请求了只读模式但无法保证时，服务器直接拒绝启动。
+
+```json
+{
+  "mcpServers": {
+    "vmware-pilot": {
+      "command": "vmware-pilot",
+      "args": ["mcp"],
+      "env": { "VMWARE_PILOT_READ_ONLY": "true" }
+    }
+  }
+}
+```
+
+**在本仓启用前请先读这一段。** vmware-pilot 是编排器，**编排本身就是它的写操作面**。13 个工具中有 9 个是写工具，且会被全部移除：
+
+`plan_workflow`、`run_workflow`、`approve`、`rollback`、`cancel_workflow`、`create_workflow`、`design_workflow`、`update_draft`、`confirm_draft`
+
+只剩 4 个读工具可用：
+
+| 工具 | 只读模式下仍可用于 |
+|------|-------------------|
+| `list_workflows` | 浏览内置模板和自定义模板 |
+| `get_skill_catalog` | 查看工作流可以调用哪些技能和工具 |
+| `get_workflow_status` | 查询已有工作流的状态、差异报告和审计日志 |
+| `review_workflow` | 在任何人执行之前对工作流定义做静态审查 |
+
+也就是说，只读模式下的 pilot **无法创建、规划、执行、审批、回滚或取消任何工作流**，只能查看已经存在的工作流。需要说明的是：pilot 的写操作落在它自己的工作流数据库（`~/.vmware/workflows.db`）里，并不直接作用于 VMware 环境——它自身没有 vCenter 连接。之所以仍被归类为写工具，是因为 `run_workflow` 是工作流的派发点、`approve` 是放行它的闸门；真正的基础设施变更发生在下游，在目标技能自己的进程中，受该技能自己的只读开关约束。
+
+因此，如果你开启家族级开关是为了保护 VMware 环境、同时仍想使用编排能力，那就让 pilot 保持可写、由下游技能来落实这道锁——按 skill 的变量优先于家族级变量：
+
+```json
+{
+  "mcpServers": {
+    "vmware-pilot": {
+      "command": "vmware-pilot",
+      "args": ["mcp"],
+      "env": { "VMWARE_READ_ONLY": "true", "VMWARE_PILOT_READ_ONLY": "false" }
+    }
+  }
+}
+```
+
+优先级：按 skill 环境变量（`VMWARE_PILOT_READ_ONLY`）→ 家族环境变量（`VMWARE_READ_ONLY`）→ 默认关闭。与家族其他成员不同，vmware-pilot 不读取任何配置文件，**环境变量是唯一的开关**——不存在 `read_only:` 配置项。启动日志会列出被移除工具的完整清单。
 
 ## 审计与安全
 

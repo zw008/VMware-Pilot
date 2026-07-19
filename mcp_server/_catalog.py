@@ -100,4 +100,22 @@ SKILL_CATALOG = {
             "vsan_capacity": {"risk": "low", "desc": "vSAN capacity overview"},
         },
     },
+    "avi": {
+        "description": "AVI (NSX ALB) load balancing: virtual services, pool members, AKO on Kubernetes",
+        "tools": {
+            "vs_list": {"risk": "low", "desc": "List Virtual Services with VIP and health"},
+            "vs_status": {"risk": "low", "desc": "Detailed status for one Virtual Service"},
+            "vs_analytics": {"risk": "low", "desc": "VS metrics — use to confirm a drain reached 0 connections"},
+            "vs_toggle": {"risk": "high", "desc": "Enable or disable a Virtual Service"},
+            "pool_list": {"risk": "low", "desc": "List pools on the Controller"},
+            "pool_members": {"risk": "low", "desc": "List pool members with health and enabled state"},
+            "pool_member_disable": {"risk": "high", "desc": "Drain a pool member gracefully before maintenance"},
+            "pool_member_enable": {"risk": "medium", "desc": "Return a pool member to service after maintenance"},
+            "ssl_expiry_check": {"risk": "low", "desc": "Certificates expiring within N days"},
+            "ako_status": {"risk": "low", "desc": "AKO pod status on a Kubernetes context"},
+            "ako_config_upgrade": {"risk": "medium", "desc": "Apply AKO Helm upgrade (dry_run=true by default)"},
+            "ako_restart": {"risk": "high", "desc": "Restart the AKO pod"},
+            "ako_sync_force": {"risk": "high", "desc": "Force AKO to resync all K8s resources with the Controller"},
+        },
+    },
 }

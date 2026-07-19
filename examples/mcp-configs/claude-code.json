@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "vmware-pilot": {
-      "command": "uvx",
-      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+      "command": "vmware-pilot",
+      "args": ["mcp"]
     }
   }
 }

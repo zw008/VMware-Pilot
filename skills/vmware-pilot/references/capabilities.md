@@ -1,6 +1,6 @@
 # Capabilities — vmware-pilot
 
-## MCP Tools (11)
+## MCP Tools (13 — 4 read, 9 write)
 
 | # | Tool | Risk | Category | Description |
 |---|------|------|----------|-------------|
@@ -15,10 +15,12 @@
 | 9 | `approve` | high | Control | Human approval to continue past approval gate |
 | 10 | `rollback` | high | Control | Reverse completed steps in reverse order |
 | 11 | `get_workflow_status` | low | Control | Query workflow state, audit log, diff report |
+| 12 | `review_workflow` | low | Discovery | Sanity-check a planned workflow before anyone runs it |
+| 13 | `cancel_workflow` | medium | Control | Cancel a workflow — moves it to the terminal CANCELLED state |
 
 ---
 
-## Built-in Templates (14)
+## Built-in Templates (15)
 
 | # | Template | Steps | Approval | Skills Used | Risk |
 |---|----------|-------|----------|-------------|------|
@@ -36,25 +38,34 @@
 | 12 | `baseline_capture` | 1-5 | No | monitor, nsx, storage | Low |
 | 13 | `baseline_audit` | 2-5 | No | monitor, nsx, storage, aria | Low |
 | 14 | `baseline_remediate` | 3+n | Yes | varies | High |
+| 15 | `investigate_alert` | 4-9 | Checkpoint | monitor, aria | Low |
 
 ---
 
 ## Orchestrated Skills (8)
 
-Pilot does not call VMware APIs directly. It delegates to these skills:
+Pilot does not call VMware APIs directly. It delegates to these skills. Two different
+numbers matter here, and they are not the same thing:
 
-| Skill | Package | Tools | Domain |
-|-------|---------|:-----:|--------|
-| vmware-aiops | `vmware-aiops` | 34 | VM lifecycle, deployment, guest ops, clusters |
-| vmware-monitor | `vmware-monitor` | 7 | Read-only inventory, alarms, events |
-| vmware-nsx | `vmware-nsx-mgmt` | 32 | NSX segments, gateways, NAT, routing, IPAM |
-| vmware-nsx-security | `vmware-nsx-security` | 20 | DFW policies/rules, security groups, traceflow |
-| vmware-aria | `vmware-aria` | 27 | Aria Ops metrics, alerts, capacity, anomalies |
-| vmware-vks | `vmware-vks` | 20 | Tanzu Supervisor, Namespaces, TKC clusters |
-| vmware-storage | `vmware-storage` | 11 | Datastores, iSCSI, vSAN |
-| vmware-avi | `vmware-avi` | 29 | AVI load balancing, pool members, AKO K8s ops |
+- **Skill tools** — everything that skill exposes over MCP, all callable by the agent
+  when it dispatches a step.
+- **In design catalog** — the hand-picked subset `get_skill_catalog` surfaces to the AI
+  while it drafts a workflow. It is a curated starting point, not a whitelist: a step may
+  name any skill, including ones absent from the catalog.
 
-**Total**: 185 tools across 8 skills (+ 11 pilot tools + 5 harness tools = 201 tools)
+| Skill | Package | Skill tools | In design catalog | Domain |
+|-------|---------|:-----------:|:-----------------:|--------|
+| vmware-aiops | `vmware-aiops` | 49 | 18 | VM lifecycle, deployment, guest ops, clusters |
+| vmware-monitor | `vmware-monitor` | 27 | 5 | Read-only inventory, alarms, events |
+| vmware-nsx | `vmware-nsx-mgmt` | 33 | 8 | NSX segments, gateways, NAT, routing, IPAM |
+| vmware-nsx-security | `vmware-nsx-security` | 21 | 7 | DFW policies/rules, security groups, traceflow |
+| vmware-aria | `vmware-aria` | 28 | 7 | Aria Ops metrics, alerts, capacity, anomalies |
+| vmware-vks | `vmware-vks` | 20 | 6 | Tanzu Supervisor, Namespaces, TKC clusters |
+| vmware-storage | `vmware-storage` | 11 | 5 | Datastores, iSCSI, vSAN |
+| vmware-avi | `vmware-avi` | 28 | 13 | AVI load balancing, pool members, AKO K8s ops |
+
+**Totals**: 217 tools across the 8 companion skills; the design catalog covers 69 of them
+across all 8. Pilot adds 13 orchestration tools of its own.
 
 ---
 

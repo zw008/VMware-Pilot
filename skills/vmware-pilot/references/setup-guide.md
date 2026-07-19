@@ -17,7 +17,7 @@ uv tool install vmware-pilot
 ### Via pip
 
 ```bash
-pip install vmware-pilot
+uv tool install vmware-pilot
 
 # China mainland mirror
 pip install vmware-pilot -i https://pypi.tuna.tsinghua.edu.cn/simple
@@ -26,8 +26,9 @@ pip install vmware-pilot -i https://pypi.tuna.tsinghua.edu.cn/simple
 ### Verify Installation
 
 ```bash
-# Start the MCP server (exits immediately if all imports succeed)
-uvx --from vmware-pilot vmware-pilot-mcp
+# Confirm the CLI is on PATH, then start the MCP server
+vmware-pilot version
+vmware-pilot mcp
 ```
 
 ---
@@ -42,8 +43,8 @@ Add to your Claude Code MCP config:
 {
   "mcpServers": {
     "vmware-pilot": {
-      "command": "uvx",
-      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+      "command": "vmware-pilot",
+      "args": ["mcp"]
     }
   }
 }
@@ -55,8 +56,8 @@ Add to your Claude Code MCP config:
 {
   "mcpServers": {
     "vmware-pilot": {
-      "command": "uvx",
-      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+      "command": "vmware-pilot",
+      "args": ["mcp"]
     }
   }
 }
@@ -69,12 +70,38 @@ extensions:
   vmware-pilot:
     name: vmware-pilot
     type: stdio
-    cmd: uvx
+    cmd: vmware-pilot
     args:
-      - --from
-      - vmware-pilot
-      - vmware-pilot-mcp
+      - mcp
 ```
+
+### Fallback: launching through `uvx`
+
+The `uvx` form still works and needs no prior install:
+
+```json
+{
+  "mcpServers": {
+    "vmware-pilot": {
+      "command": "uvx",
+      "args": ["--from", "vmware-pilot", "vmware-pilot-mcp"]
+    }
+  }
+}
+```
+
+Prefer the installed entry point above where you can. `uvx` re-resolves the package against
+PyPI on every start, so on a corporate network with a TLS-inspecting proxy it fails before the
+server ever runs:
+
+```
+invalid peer certificate: UnknownIssuer
+```
+
+`uv` ships its own certificate bundle and ignores the system trust store, which is what breaks.
+Either set `UV_NATIVE_TLS=true` so it honours your corporate CA, or install the tool once
+(`uv tool install vmware-pilot`) and launch `vmware-pilot mcp`, which touches the network
+zero times.
 
 ---
 
@@ -108,6 +135,24 @@ rules:
       time_range: "02:00-06:00"
       timezone: "Asia/Shanghai"
 ```
+
+### Environment Scoping
+
+Policy rules scope by environment ("irreversible work in production needs a
+second person"). Skills that connect to a VMware estate declare `environment:`
+(`production` / `staging` / `lab`) per target in their own `config.yaml`; a
+target that declares none is treated as unknown, and state-changing operations
+against it currently log a warning — **the next major release will refuse
+them**.
+
+vmware-pilot has no targets and needs no such declaration: it reports a
+constant `local`. That is accurate rather than an exemption — pilot's own
+writes land in `~/.vmware/workflows.db`, and its executor never calls VMware
+APIs. When a workflow reaches an executable step, the MCP server records it as
+`not_executed` and returns `dispatch_required`; the calling agent then performs
+that step through the target skill's own MCP tool, where that skill's declared
+environment applies and the approval gate fires. The gate moves downstream, it
+is not skipped.
 
 ### Audit Database
 

@@ -1,15 +1,18 @@
 startCommand:
   type: stdio
+  # vmware-pilot reads no config file — it owns no vCenter connection and
+  # delegates to companion skills. Read-only mode is the only switch, and it is
+  # an environment variable.
   configSchema:
     type: object
     properties:
-      config_path:
-        type: string
-        description: "Path to vmware-pilot config.yaml (default: ~/.vmware-pilot/config.yaml)"
+      read_only:
+        type: boolean
+        description: "Withhold all 9 orchestration write tools from the MCP registry (default: false)"
     required: []
   commandFunction: |
     (config) => ({
-      command: "python",
-      args: ["-m", "mcp_server"],
-      env: config.config_path ? { VMWARE_PILOT_CONFIG: config.config_path } : {}
+      command: "vmware-pilot",
+      args: ["mcp"],
+      env: config.read_only ? { VMWARE_PILOT_READ_ONLY: "true" } : {}
     })

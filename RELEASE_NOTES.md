@@ -1,3 +1,65 @@
+## v1.8.0 (2026-07-18) — read-only mode, working policy defaults, declared environments
+
+Family release driven by [VMware-AIops#31](https://github.com/zw008/VMware-AIops/issues/31),
+where an operator running Llama 3.3 70B (Goose / OpenShift AI, on-prem H100) had to
+hand-write 17 prompt guardrails to make tool calling reliable. A prompt is advisory — a
+model can ignore it. Every guardrail that could move into the harness has.
+
+### Added
+- **Read-only mode.** Set `VMWARE_PILOT_READ_ONLY=true` (or the family-wide
+  `VMWARE_READ_ONLY=true`) and every write tool is removed from the MCP registry
+  at start-up. `list_tools()` never offers them, so the model cannot call what it cannot
+  see. **Off by default** — nothing changes unless you turn it on. Fail-closed: if the
+  mode is requested but cannot be guaranteed, the server refuses to start rather than
+  running open. vmware-pilot reads no config file, so these environment variables are the
+  only switch — there is no `read_only:` config key here.
+- **Declared environment for policy scoping.** Policy rules scope by environment. Pilot
+  owns no targets and no connection, so it registers a constant `local` rather than
+  reading `environment:` from a config target the way the connected skills do. Its writes
+  land in the local workflow DB; the approval gate on the real change applies downstream,
+  in the target skill's process, against that skill's declared environment.
+
+### Changed — migration, read this
+- **Approval tiers now actually run.** They shipped in v1.6.0 but the engine only ever
+  read `~/.vmware/rules.yaml`, and a fresh install has no such file — so every deny rule,
+  maintenance window and approval tier had been inert on every install that never
+  hand-authored one. A packaged baseline now loads when you have written no rules of your
+  own. Writes at medium risk and above are stamped with their tier in the audit log;
+  irreversible work and guest execution against a target declared `production` require a
+  named approver via `VMWARE_AUDIT_APPROVED_BY`.
+- **`environment:` will become required for writes — no action needed in pilot.** A
+  state-changing operation against a target that declares no environment runs with a
+  warning today, and the next major release refuses it. That requirement lands on the
+  skills that own targets; pilot owns none and reports a constant `local`, so it is
+  unaffected either way. Declare `environment:` in the config of each connected skill
+  (aiops, monitor, nsx, …) and check what applies before upgrading:
+  `vmware-audit policy --operation vm_delete --env <env>`.
+
+### Fixed
+- **Policy glob patterns with a leading wildcard silently matched nothing.** A rule written
+  `operations: ["*_delete"]` parsed fine, read correctly, and never fired — only a trailing
+  `*` was honoured. Now full glob matching, for operations and environments alike.
+
+### Notes
+- Requires `vmware-policy>=1.8.0`; publish that package first.
+- `vmware-audit policy` reports which rules are in force and where they came from —
+  including the case where your rules file exists but failed to parse, which previously
+  looked identical to "policy is working".
+
+### Fixed — pre-release review (2026-07-19)
+
+- **`get_skill_catalog` now lists `avi`.** The docs advertise cross-skill AVI workflows
+  ("drain server, patch, restore traffic") but the design catalog carried no avi entry,
+  so an agent calling `get_skill_catalog` to design exactly that workflow got zero avi
+  tools. 13 curated tools added; the catalog is now 69 across 8 skills.
+- **Tool and template tables were short.** `capabilities.md` listed 11 of 13 MCP tools
+  (missing `review_workflow`, `cancel_workflow`) and 14 of 15 built-in templates
+  (missing `investigate_alert`).
+- **Removed `config.example.yaml`.** All four keys were inert — `database` and
+  `templates_dir` are hardcoded constants with no config or env override, and
+  `policy_rules` / `audit_db` belong to vmware-policy. It told operators to copy a file
+  to a path nothing reads.
+
 ## v1.6.2 (2026-06-24) — MCP Registry registration
 
 Adds the `mcp-name` marker to the README so the package can register on the MCP Registry (踩坑 #31). No functional code changes.

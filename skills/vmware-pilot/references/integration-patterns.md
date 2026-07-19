@@ -1,6 +1,8 @@
 # Cross-Skill Integration Patterns
 
-vmware-pilot orchestrates 7 VMware skills (156 tools) into coherent workflows.
+vmware-pilot orchestrates the VMware skill family into coherent workflows. Its
+design catalog (`get_skill_catalog`) offers 69 curated building blocks across 8
+skills; a dispatched step may name any companion skill, catalogued or not.
 This reference documents the most common integration patterns and when to use
 Pilot vs. calling a skill directly.
 

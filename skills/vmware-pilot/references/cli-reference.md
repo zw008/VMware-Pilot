@@ -1,22 +1,33 @@
 # CLI Reference — vmware-pilot
 
-vmware-pilot is an **MCP-only** server. It does not provide a standalone CLI binary.
-All workflow operations are performed via MCP tool calls through an AI agent or MCP client.
+The `vmware-pilot` CLI is a **launcher, not a second interface to workflows**. It starts the
+MCP server and reports its version — nothing else. Every workflow operation (design, plan,
+run, approve, rollback, cancel) is performed via MCP tool calls through an AI agent or MCP
+client.
 
 ---
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `vmware-pilot mcp` | Start the MCP server on stdio transport |
+| `vmware-pilot version` | Print the installed version |
+| `vmware-pilot --help` | Show usage |
 
 ## MCP Server Launch
 
 ```bash
-# Recommended: via uvx (isolated environment)
-uvx --from vmware-pilot vmware-pilot-mcp
+# Recommended: installed entry point, never touches the network
+uv tool install vmware-pilot
+vmware-pilot mcp
 
-# Alternative: via pip install
-pip install vmware-pilot
-vmware-pilot-mcp
+# Fallback: uvx re-resolves against PyPI each start and fails behind a
+# TLS-inspecting corporate proxy — set UV_NATIVE_TLS=true if you must use it
+uvx --from vmware-pilot vmware-pilot-mcp
 ```
 
-The server runs on **stdio** transport and exposes 11 MCP tools.
+The server runs on **stdio** transport and exposes 13 MCP tools (4 read, 9 write).
 
 ---
 

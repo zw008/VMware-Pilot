@@ -22,7 +22,8 @@ Do **not** open a public GitHub issue for security vulnerabilities.
 - VMware-Pilot is an orchestration layer and **does not connect to vCenter, NSX, or AVI directly**
 - All authentication is handled by the companion skills it delegates to (vmware-aiops, vmware-nsx, vmware-storage, etc.)
 - No credentials are stored, loaded, or managed by this package
-- MCP-only — no standalone CLI binary
+- The `vmware-pilot` CLI only launches the MCP server and prints its version; every
+  workflow operation goes through MCP tool calls, and none of them take credentials
 
 ### Approval Gates
 
