@@ -7,8 +7,8 @@ from typing import Any, Optional
 
 from vmware_policy import vmware_tool
 
-from mcp_server._catalog import SKILL_CATALOG
-from mcp_server._shared import (
+from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
+from vmware_pilot.mcp_server._shared import (
     _get_store,
     _save_as_yaml,
     _validate_template_name,

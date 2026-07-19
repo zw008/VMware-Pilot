@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from vmware_policy import vmware_tool
 
-from mcp_server._catalog import SKILL_CATALOG
-from mcp_server._shared import _get_store, mcp
+from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
+from vmware_pilot.mcp_server._shared import _get_store, mcp
 from vmware_pilot.review import review as _review_workflow_impl
 
 

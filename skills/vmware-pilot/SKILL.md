@@ -170,7 +170,7 @@ A tool from the table above missing from `list_tools()` means this deployment is
 
 Counter-intuitively, **orchestration is pilot's write surface**. All 9 orchestration tools (`design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`, `create_workflow`, `run_workflow`, `approve`, `rollback`, `cancel_workflow`) go, leaving the 4 query tools: a read-only pilot can inspect workflows but cannot author, run, approve, roll back or cancel one. That is a deliberate lockdown, not a fault — do not retry, and do not look for another tool or a CLI path to the same change. Name the blocked operation and say an operator must clear the switch and restart the server.
 
-`VMWARE_READ_ONLY=true` with `VMWARE_PILOT_READ_ONLY=false` keeps orchestration here and leaves enforcement to the downstream skills — the per-skill variable wins over the family one.
+`VMWARE_READ_ONLY=true` with `VMWARE_PILOT_READ_ONLY=false` keeps orchestration here and leaves enforcement to the downstream skills — the per-skill variable wins over the family one. Running with local or small models? See [`references/agent-guardrails.md`](references/agent-guardrails.md).
 
 ## Built-in Templates (15)
 

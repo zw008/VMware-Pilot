@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-import mcp_server.server as server
+import vmware_pilot.mcp_server.server as server
 from vmware_pilot.executor import WorkflowExecutor
 from vmware_pilot.models import (
     Workflow,

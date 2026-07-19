@@ -7,7 +7,7 @@ from typing import Any
 
 from vmware_policy import vmware_tool
 
-from mcp_server._shared import _get_executor, _get_store, mcp
+from vmware_pilot.mcp_server._shared import _get_executor, _get_store, mcp
 from vmware_pilot.models import WorkflowState
 from vmware_pilot.review import review as _review_workflow_impl
 from vmware_pilot.templates import get_all_templates

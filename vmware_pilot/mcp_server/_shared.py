@@ -2,7 +2,7 @@
 
 Holds the single FastMCP instance every tool module registers onto and small
 helpers (template-name validation, YAML persistence). The store/executor
-accessors live in ``mcp_server.server`` (the patch target the test-suite uses);
+accessors live in ``vmware_pilot.mcp_server.server`` (the patch target the test-suite uses);
 the ``_get_store``/``_get_executor`` wrappers here defer to them at call time so
 that ``monkeypatch.setattr(server, "_store", ...)`` is observed.
 """
@@ -32,15 +32,15 @@ mcp = FastMCP(
 
 
 def _get_store() -> WorkflowStore:
-    # Defer to the canonical accessor in mcp_server.server so test patches of
+    # Defer to the canonical accessor in vmware_pilot.mcp_server.server so test patches of
     # server._store are honoured. Imported lazily to avoid a circular import.
-    from mcp_server import server
+    from vmware_pilot.mcp_server import server
 
     return server._get_store()
 
 
 def _get_executor() -> WorkflowExecutor:
-    from mcp_server import server
+    from vmware_pilot.mcp_server import server
 
     return server._get_executor()
 

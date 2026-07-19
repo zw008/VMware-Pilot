@@ -1,7 +1,7 @@
 """MCP server for VMware Pilot — workflow orchestration.
 
 Thin entrypoint. The shared FastMCP instance and helpers live in
-``mcp_server._shared``; the 13 tools are defined across ``mcp_server.tools``
+``vmware_pilot.mcp_server._shared``; the 13 tools are defined across ``vmware_pilot.mcp_server.tools``
 (lifecycle / query / authoring) and register themselves on import. The
 store/executor singletons + accessors live here because the test-suite patches
 ``server._store`` / ``server._executor``; ``_shared`` defers to these accessors
@@ -20,8 +20,8 @@ from typing import Optional
 
 from vmware_policy import apply_read_only_gate, set_environment_resolver
 
-from mcp_server._catalog import SKILL_CATALOG
-from mcp_server._shared import _save_as_yaml, _validate_template_name, mcp
+from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
+from vmware_pilot.mcp_server._shared import _save_as_yaml, _validate_template_name, mcp
 from vmware_pilot.executor import WorkflowExecutor
 from vmware_pilot.models import WorkflowStore
 
@@ -47,20 +47,20 @@ def _get_executor() -> WorkflowExecutor:
 
 # Importing the tool modules registers every @mcp.tool onto ``mcp`` and gives
 # this module the tool functions to re-export (test-suite calls server.<tool>).
-from mcp_server.tools.authoring import (  # noqa: E402
+from vmware_pilot.mcp_server.tools.authoring import (  # noqa: E402
     confirm_draft,
     create_workflow,
     design_workflow,
     update_draft,
 )
-from mcp_server.tools.lifecycle import (  # noqa: E402
+from vmware_pilot.mcp_server.tools.lifecycle import (  # noqa: E402
     approve,
     cancel_workflow,
     plan_workflow,
     rollback,
     run_workflow,
 )
-from mcp_server.tools.query import (  # noqa: E402
+from vmware_pilot.mcp_server.tools.query import (  # noqa: E402
     get_skill_catalog,
     get_workflow_status,
     list_workflows,

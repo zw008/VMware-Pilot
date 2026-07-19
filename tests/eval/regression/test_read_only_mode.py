@@ -26,15 +26,15 @@ import pytest
 
 
 def _load_server(monkeypatch, read_only):
-    """Import mcp_server.server fresh under the given read-only env."""
+    """Import vmware_pilot.mcp_server.server fresh under the given read-only env."""
     monkeypatch.delenv("VMWARE_READ_ONLY", raising=False)
     monkeypatch.delenv("VMWARE_PILOT_READ_ONLY", raising=False)
     if read_only is not None:
         monkeypatch.setenv("VMWARE_READ_ONLY", read_only)
 
-    for name in [m for m in sys.modules if m.startswith("mcp_server")]:
+    for name in [m for m in sys.modules if m.startswith("vmware_pilot.mcp_server")]:
         del sys.modules[name]
-    return importlib.import_module("mcp_server.server")
+    return importlib.import_module("vmware_pilot.mcp_server.server")
 
 
 def _tools(server):
@@ -63,16 +63,16 @@ def _split_by_marker(server):
 def _restore_modules():
     """Put back the exact module objects other test files already hold.
 
-    Deleting them is not enough here: ``mcp_server._shared`` re-imports
-    ``mcp_server.server`` lazily on every tool call so that
+    Deleting them is not enough here: ``vmware_pilot.mcp_server._shared`` re-imports
+    ``vmware_pilot.mcp_server.server`` lazily on every tool call so that
     ``monkeypatch.setattr(server, "_store", ...)`` is honoured. If this file
     leaves the modules purged, tests/test_server.py patches its stale module
     object while the tools resolve a freshly imported one, and its store
     patches silently stop taking effect.
     """
-    saved = {n: m for n, m in sys.modules.items() if n.startswith("mcp_server")}
+    saved = {n: m for n, m in sys.modules.items() if n.startswith("vmware_pilot.mcp_server")}
     yield
-    for name in [m for m in sys.modules if m.startswith("mcp_server")]:
+    for name in [m for m in sys.modules if m.startswith("vmware_pilot.mcp_server")]:
         del sys.modules[name]
     sys.modules.update(saved)
 
@@ -123,9 +123,9 @@ def test_skill_env_var_also_works(monkeypatch):
 
     monkeypatch.delenv("VMWARE_READ_ONLY", raising=False)
     monkeypatch.setenv("VMWARE_PILOT_READ_ONLY", "true")
-    for name in [m for m in sys.modules if m.startswith("mcp_server")]:
+    for name in [m for m in sys.modules if m.startswith("vmware_pilot.mcp_server")]:
         del sys.modules[name]
-    server = importlib.import_module("mcp_server.server")
+    server = importlib.import_module("vmware_pilot.mcp_server.server")
     assert not (write_tools & _tool_names(server))
 
 

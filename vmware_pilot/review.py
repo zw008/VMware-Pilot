@@ -1,7 +1,7 @@
 """Structural review of a planned workflow.
 
 Pure-function implementation so it is trivially testable. The MCP tool wrapper
-in ``mcp_server/server.py`` just loads the workflow and calls ``review()``.
+in ``vmware_pilot/mcp_server/server.py`` just loads the workflow and calls ``review()``.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ _ID_FRAGMENTS = ("name", "id", "vm", "segment", "rule", "policy")
 def review(wf: Workflow) -> dict[str, Any]:
     """Sanity-check a planned workflow and return findings + summary.
 
-    See docstring of ``mcp_server.server.review_workflow`` for behavior contract.
+    See docstring of ``vmware_pilot.mcp_server.server.review_workflow`` for behavior contract.
     """
     findings: list[dict[str, Any]] = []
     destructive_indices: list[int] = []

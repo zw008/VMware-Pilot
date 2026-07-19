@@ -1,0 +1,193 @@
+# Operating vmware-pilot with a local / small model
+
+Claude-class models drive this skill without special instruction. Smaller and
+locally-hosted models — Llama 3.3 70B, Qwen, Mistral, and similar, served
+through Goose, Ollama, or OpenShift AI — need explicit operating rules to call
+tools reliably.
+
+This page exists because an operator wrote those rules by hand first. The
+guardrails below are adapted, with thanks, from the working configuration
+[@juanpf-ha](https://github.com/juanpf-ha) developed while running
+vmware-monitor and vmware-aria against a production vSphere estate with Llama
+3.3 70B FP8 on an on-prem H100
+([VMware-AIops#31](https://github.com/zw008/VMware-AIops/issues/31)). The
+cross-skill rules are identical across this family; the parts below marked
+vmware-pilot are specific to this skill.
+
+vmware-pilot is the odd one out. It manages no infrastructure of its own — it
+designs multi-step workflows, tracks their state, and gates them on human
+approval. Two consequences follow, and both matter more on a small model than
+on a large one: **authoring a workflow is itself the write operation**, and
+**pilot does not execute anything** — the calling agent does.
+
+> **Disclaimer**: This is a community-maintained open-source project and is
+> **not affiliated with, endorsed by, or sponsored by VMware, Inc. or Broadcom
+> Inc.** "VMware" and "vSphere" are trademarks of Broadcom.
+
+---
+
+## First: the rules you no longer need to write
+
+Several guardrails from the original configuration are now enforced by the
+skill itself. Prompt instructions are advisory — a model can ignore them.
+These are structural, so it cannot.
+
+| Guardrail you would otherwise prompt for | Now enforced by |
+|---|---|
+| "Work exclusively in read-only mode and never modify anything" | **Read-only mode.** Set `VMWARE_READ_ONLY=true` and 9 of its 13 tools are withheld at startup. `list_tools()` never offers them, so the model cannot call what it cannot see. |
+| "Do not design or run a workflow — only inspect the existing ones" | Same gate, and this is the counter-intuitive part: **orchestration is pilot's write surface.** All nine of `design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`, `create_workflow`, `run_workflow`, `approve`, `rollback` and `cancel_workflow` go, leaving four query tools — `list_workflows`, `review_workflow`, `get_workflow_status` and `get_skill_catalog`. A read-only pilot can inspect workflows but cannot author, run, approve, roll back or cancel one. |
+| "Never approve your own plan" | **`approve` is a write tool** and is withheld in read-only mode along with the rest. Under the family switch, an agent physically cannot self-approve. |
+| "Do not execute steps yourself — hand them back for a human to run" | **The dispatch contract.** Pilot never calls a companion skill's MCP tools; it returns a step description and the calling agent invokes the tool. This is architecture, not etiquette. |
+| "Check the plan makes sense before running it" | **`review_workflow`** performs a structural sanity check and returns `approved` or `needs_revision`. It is a read tool, so it survives read-only mode. |
+| "Log every state change you make" | **The `@vmware_tool` decorator.** Every workflow transition is recorded to `~/.vmware/audit.db`, and `get_workflow_status` returns the state plus its audit log. |
+
+The one guardrail this skill does not hand you: pilot's list tools return bare
+collections, not the family `{items, returned, limit, total, truncated, hint}`
+envelope. Truncation is not self-declaring here.
+
+### Turning read-only mode on
+
+One variable covers every skill in the family:
+
+```json
+{
+  "mcpServers": {
+    "vmware-pilot": {
+      "command": "vmware-pilot",
+      "args": ["mcp"],
+      "env": { "VMWARE_READ_ONLY": "true" }
+    }
+  }
+}
+```
+
+**This skill has no `config.yaml`**, so the two environment variables are the
+only switch — there is no `read_only:` configuration setting to fall back on.
+Precedence is per-skill env → family env → off.
+
+The useful combination here is the inverse of the usual one:
+
+```bash
+VMWARE_READ_ONLY=true          # whole family read-only
+VMWARE_PILOT_READ_ONLY=false   # …but keep orchestration available
+```
+
+That keeps design and dry planning alive in pilot while every downstream skill
+refuses the actual change — the per-skill variable wins over the family one. It
+is a good posture for letting a small model draft a plan you intend to read
+before anyone runs it.
+
+An unparseable value (`VMWARE_READ_ONLY=ture`) enables read-only mode rather
+than silently ignoring the typo. A blocked tool is a lockdown, not a fault:
+name the operation that cannot be performed and stop, rather than retrying or
+looking for another route to the same change.
+
+---
+
+## The system prompt
+
+Everything below still benefits from being stated explicitly. Copy this into
+your agent's instruction block.
+
+```text
+## Tool use
+
+- Always call an MCP tool before answering any question about workflow state.
+  Never answer from memory or assumption.
+- Never describe a tool call, and never output a JSON example, instead of
+  executing the tool. If you intend to call a tool, call it.
+- If a tool fails, report the actual error text. Do not complete the answer
+  with assumptions about what the result would have been.
+- Use explicit limits on queries that may return large amounts of data. Do not
+  request unlimited results unless the user asks for them.
+
+## Skill routing
+
+- vmware-pilot: multi-step workflows — design, plan, run, approve, roll back,
+  cancel, and inspect state.
+- vmware-aiops: VM lifecycle. Pilot never calls it; you do, when pilot hands
+  you a step.
+- vmware-monitor: read-only vCenter inventory, hosts, alarms, events.
+- vmware-nsx / vmware-nsx-security: networking and firewall.
+- vmware-storage, vmware-vks, vmware-aria, vmware-avi: their own domains.
+- A single-step request does not need a workflow. Call the skill directly.
+
+## The dispatch contract
+
+- Pilot is a dispatcher, not an executor. When run_workflow returns a step, YOU
+  invoke that skill's MCP tool and report the result back. Pilot will not do it.
+- Never claim a step ran because pilot advanced its state. State advanced
+  because you told pilot it did.
+- If you cannot invoke the tool a step names — it is not installed, or it is
+  withheld by read-only mode — say so and stop. Do not improvise a substitute.
+
+## Designing workflows
+
+- A step's tool must be a real tool on the named skill. get_skill_catalog is a
+  curated design aid, not a whitelist: it lists a hand-picked subset, so a tool
+  missing from the catalog may still exist. Confirm against the target skill's
+  own SKILL.md before writing a step that names it.
+- Never invent a tool name to make a step read well. A workflow that names a
+  tool which does not exist fails at run time, several steps in.
+- Order steps by dependency, not by narration. Gather state before changing it;
+  put the approval gate before the first irreversible step, not after it.
+- Give every reversible step a rollback_tool and rollback_params. A step with
+  no rollback cannot be undone by the rollback tool.
+- Run review_workflow before executing. Treat needs_revision as a stop.
+
+## Data fidelity
+
+- Never invent workflows, steps, templates, or state transitions. If a tool did
+  not return it, it does not exist for this answer.
+- Preserve the exact workflow and step state values the tools return. Do not
+  translate, normalise, or prettify them.
+- Report the steps in their defined order. Order is semantic in a workflow.
+- If a requested field was not returned, show it as "not available".
+- When a response is long, report every item it contains.
+
+## Analysis discipline
+
+- Separate observed data from interpretation. State which is which.
+- Do not claim a workflow succeeded, or that an estate is now in some state,
+  on the basis of workflow state alone. Verify with the owning skill's read
+  tools.
+- Avoid generic recommendations that are not directly supported by the results.
+```
+
+---
+
+## Known failure modes on small models
+
+Observed with Llama 3.3 70B FP8 (Goose, on-prem H100), and useful as a
+checklist when evaluating any local model against these skills:
+
+| Symptom | Mitigation |
+|---|---|
+| Describes a tool call, or emits a JSON example, instead of executing it | The "never describe a tool call" rule above. Also check your harness is not echoing tool schemas into context — models imitate the nearest format they see. |
+| Long tool responses: omits items, or reports "no data returned" when data was present | Ask for explicit limits so responses stay small. Pilot's lists have no truncation envelope, so verify long results rather than trusting the summary. |
+| Adds generic recommendations unsupported by results | The "analysis discipline" rules. |
+| Drops requested fields or reorders results | State the required fields and ordering in the request itself. In a workflow, reordering the steps changes what the plan does. |
+| Multi-tool workflows take 30–50s end to end | Start from a built-in template with `plan_workflow` rather than designing from scratch; `get_workflow_status` returns state and audit log together. |
+
+### Workflow design failures — the pattern to watch here
+
+Designing a plan is generative work, and it is where a small model's habits do
+the most damage. These are specific to this skill:
+
+| Symptom | Mitigation |
+|---|---|
+| Writes a step naming a tool that does not exist — a plausible name assembled from the skill's naming pattern rather than its actual surface | The "never invent a tool name" rule. `get_skill_catalog` lists a curated subset, so absence from the catalog is not proof a tool is missing — and presence of a *plausible* name in the model's head is no proof it exists. Confirm against the target skill's SKILL.md. Nothing catches this until run time. |
+| Orders steps by narrative rather than dependency: changes state before gathering it, or verifies before acting | The "order by dependency" rule, then `review_workflow`. |
+| Places the approval gate after the irreversible step it was meant to guard | Same. State explicitly which step the gate protects. |
+| Omits `rollback_tool` on reversible steps, leaving nothing for `rollback` to undo | The rollback rule above. Add it while writing the step, not afterwards. |
+| Treats pilot's state machine as evidence the infrastructure changed | The dispatch contract. Pilot records what you told it; verify with the owning skill. |
+| Reports a step as done without having invoked the companion tool | Same. This is the dispatch contract's characteristic failure. |
+| Designs a workflow for something that is a single tool call | The routing rule. A workflow is overhead unless there is an approval gate or a real dependency chain. |
+
+## Reporting results
+
+Local-model compatibility is an explicit design constraint for this family, and
+the evidence base is small. If you evaluate a model against this skill —
+Qwen, Mistral, Granite, or anything else — a report of what worked and what did
+not is genuinely useful:
+[github.com/zw008/VMware-Pilot/issues](https://github.com/zw008/VMware-Pilot/issues).
