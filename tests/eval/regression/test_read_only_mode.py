@@ -129,6 +129,68 @@ def test_skill_env_var_also_works(monkeypatch):
     assert not (write_tools & _tool_names(server))
 
 
+# ---------------------------------------------------------------------------
+# A surviving tool must not prescribe a withheld one
+# ---------------------------------------------------------------------------
+#
+# Withholding a tool changes what the remaining descriptions mean.
+# ``get_workflow_status`` survives the gate and used to state, flatly, that
+# outcome='awaiting_approval' "means call approve". Under the gate ``approve``
+# is not in list_tools() at all, so that sentence named the required next step
+# and the required next step did not exist — the model is told to resolve a
+# state it has no instrument to resolve, and a weak one will loop trying.
+#
+# This check cannot tell "call approve to clear this" from "the id plan_workflow
+# gave you". It matches any mention, so the surviving tools that mention one for
+# a reason are classified here, with the reason, rather than silently skipped.
+# Three of the four read tools are listed, which makes the live coverage narrow
+# — the value is that a *newly* added tool cannot join them without someone
+# deciding which kind of mention it is.
+_MENTIONS_A_WITHHELD_TOOL_ACCEPTABLY = {
+    "list_workflows": "names plan_workflow/create_workflow as this discovery "
+                      "tool's purpose, not as the fix for a state it reported",
+    "get_skill_catalog": "same shape — the catalog exists to feed create_workflow",
+    "review_workflow": "names plan_workflow only as where workflow_id came from",
+}
+
+
+def test_surviving_tools_do_not_prescribe_withheld_tools(monkeypatch):
+    baseline = _load_server(monkeypatch, None)
+    _, write_tools = _split_by_marker(baseline)
+
+    server = _load_server(monkeypatch, "true")
+    withheld = set(server.WITHHELD_WRITE_TOOLS)
+    assert "approve" in withheld, "premise changed: approve is no longer withheld"
+
+    offenders = {}
+    for tool in _tools(server):
+        if tool.name in _MENTIONS_A_WITHHELD_TOOL_ACCEPTABLY:
+            continue
+        described = tool.description or ""
+        named = {w for w in withheld if w in described}
+        # Naming one is fine as long as the description says it is unavailable.
+        if named and "VMWARE_READ_ONLY" not in described:
+            offenders[tool.name] = sorted(named)
+    assert not offenders, (
+        f"these surviving tools name a withheld tool as a next step without "
+        f"saying it is withheld: {offenders}"
+    )
+    assert write_tools, "sanity: this skill must have write tools to withhold"
+    # The classification above must stay about tools that still exist.
+    assert set(_MENTIONS_A_WITHHELD_TOOL_ACCEPTABLY) <= _tool_names(server)
+
+
+def test_get_workflow_status_says_approve_is_unavailable(monkeypatch):
+    """The specific wording, pinned so a rewrite cannot quietly drop it."""
+    server = _load_server(monkeypatch, "true")
+    description = next(
+        t.description for t in _tools(server) if t.name == "get_workflow_status"
+    )
+    assert "approve" in description, "premise changed: it no longer mentions approve"
+    assert "VMWARE_READ_ONLY" in description
+    assert "operator" in description, "must route the caller somewhere reachable"
+
+
 def test_fastmcp_registry_api_still_present(monkeypatch):
     """The gate reaches into _tool_manager.list_tools(); pin that it exists.
 

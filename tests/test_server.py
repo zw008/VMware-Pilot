@@ -186,6 +186,55 @@ class TestToolParity:
 
 
 @pytest.mark.unit
+class TestListWorkflowsHintIsReachable:
+    """A hint that describes a state the code cannot reach teaches nothing.
+
+    ``list_workflows`` used to advise "check the YAML files in
+    ~/.vmware/workflows/ against the file named in 'error'". No file name can
+    ever appear in 'error': ``list_custom_workflows()`` catches per file and
+    continues, so a malformed template cannot fail this call, and anything that
+    *does* raise is reduced to its class name by ``_safe_error`` unless it is a
+    ValueError. The caller was sent looking for a filename that is structurally
+    impossible to produce.
+    """
+
+    def test_a_malformed_template_does_not_fail_the_call(self, tmp_path, monkeypatch):
+        """The premise of the old hint, falsified directly."""
+        from vmware_pilot import custom_loader
+
+        (tmp_path / "broken.yaml").write_text("name: broken\nsteps: [oops\n")
+        (tmp_path / "good.yaml").write_text(
+            "name: good\ndescription: fine\nsteps:\n  - action: a\n    skill: nsx\n"
+            "    tool: list_segments\n"
+        )
+        monkeypatch.setattr(custom_loader, "_WORKFLOWS_DIR", tmp_path)
+
+        result = server.list_workflows()
+        assert "error" not in result, "a malformed template must not fail this call"
+        names = {t["name"] for t in result["templates"]}
+        assert "good" in names
+        assert "broken" not in names, "the bad file is skipped, not reported"
+
+    def test_the_hint_does_not_promise_a_filename(self, monkeypatch):
+        """And the wording must not send the caller after one."""
+
+        def _boom():
+            raise RuntimeError("store is unreadable")
+
+        # _shared._get_store() defers to this accessor at call time, so this is
+        # the one patch point every tool module observes.
+        monkeypatch.setattr(server, "_get_store", _boom)
+
+        result = server.list_workflows()
+        assert "error" in result
+        hint = result["hint"]
+        assert "named in 'error'" not in hint
+        # The error itself is masked to a class name, proving the point.
+        assert result["error"] == "RuntimeError: operation failed."
+        assert "server log" in hint, "must route somewhere that actually has it"
+
+
+@pytest.mark.unit
 class TestConfirmDraftValidation:
     """Fix #8: confirm_draft validates the name before flipping state."""
 

@@ -66,8 +66,12 @@ def get_workflow_status(workflow_id: str) -> dict:
 
     Use this to poll a workflow after run_workflow and to find out why one
     stopped: outcome='dispatch_required' means you must perform the pending
-    steps yourself, 'awaiting_approval' means call approve. Returns a
-    point-in-time snapshot and does not advance the workflow.
+    steps yourself, 'awaiting_approval' means call approve — except under
+    VMWARE_READ_ONLY=true, where approve is withheld from the tool list along
+    with every other write tool. There the workflow cannot be advanced from
+    this server at all: report the pending approval to a human operator
+    instead of trying to clear it. Returns a point-in-time snapshot and does
+    not advance the workflow.
 
     Args:
         workflow_id: The workflow ID to query.
@@ -133,10 +137,21 @@ def list_workflows() -> dict:
     except Exception as e:
         return {
             "error": _safe_error(e, "list_workflows"),
-            "hint": "Built-in templates always load, so this usually means a "
-            "malformed custom template — check the YAML files in "
-            "~/.vmware/workflows/ against the file named in 'error', then run "
-            "list_workflows again.",
+            # Not "check the file named in 'error'": no file name can ever
+            # appear there. list_custom_workflows() swallows a malformed YAML
+            # per-file and returns the rest, so a bad template cannot fail this
+            # call — it just goes missing. Anything that does raise here is
+            # reduced to its class name by _safe_error unless it is a
+            # ValueError. The old hint sent the caller looking for a filename
+            # that is structurally impossible to produce.
+            "hint": "Not a malformed custom template: unreadable YAML in "
+            "~/.vmware/workflows/ is skipped silently, so a bad file goes "
+            "missing from 'templates' rather than failing this call — that is "
+            "also why a workflow you expected can be absent from the list. "
+            "This failure comes from the workflow store or the built-in "
+            "template registry; its traceback is in the MCP server log. "
+            "Built-in templates are unaffected, so plan_workflow with a "
+            "built-in name still works.",
         }
 
 
