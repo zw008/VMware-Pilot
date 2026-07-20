@@ -64,6 +64,11 @@ def review_workflow(workflow_id: str) -> dict:
 def get_workflow_status(workflow_id: str) -> dict:
     """[READ] Get current workflow state, diff report, and audit log.
 
+    Use this to poll a workflow after run_workflow and to find out why one
+    stopped: outcome='dispatch_required' means you must perform the pending
+    steps yourself, 'awaiting_approval' means call approve. Returns a
+    point-in-time snapshot and does not advance the workflow.
+
     Args:
         workflow_id: The workflow ID to query.
 
@@ -94,12 +99,16 @@ def get_workflow_status(workflow_id: str) -> dict:
 def list_workflows() -> dict:
     """[READ] List all available workflow templates (built-in + custom).
 
+    Use this first to see whether a template already covers the goal, then
+    pass its name to plan_workflow; if none fit, use create_workflow instead.
     Built-in templates are always available. Custom templates are loaded
     from ~/.vmware/workflows/*.yaml — drop a YAML file there to add
     your own workflows.
 
     Returns:
-        dict with builtin and custom workflow lists, each with name, description, steps count.
+        dict with builtin and custom workflow lists, each with name,
+        description, steps count, plus active_workflows — the IDs of
+        in-flight runs to pass to get_workflow_status.
     """
     try:
         from vmware_pilot.custom_loader import list_custom_workflows
@@ -144,7 +153,10 @@ def get_skill_catalog() -> dict:
     """[READ] Get the complete catalog of available skills and tools for workflow design.
 
     Use this to understand what building blocks are available when designing
-    a custom workflow. Each skill lists its key tools with risk level and description.
+    a custom workflow, then feed the skill and tool names into create_workflow
+    or update_draft steps. Note this is a static curated catalog, not a live
+    query of each skill's registry, so it may lag a skill's actual tool list;
+    pilot cannot call these tools itself — the calling agent does.
 
     Returns:
         dict mapping skill name → {description, tools: {tool_name: {risk, desc}}}.

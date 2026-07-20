@@ -36,24 +36,14 @@ def create_workflow(
 ) -> dict:
     """[WRITE] Create a custom workflow dynamically from a step list.
 
-    Use this when none of the built-in templates match. Describe what you need
-    and the AI will design the steps using available skills.
+    Use this when you already know the steps and no built-in template matches;
+    prefer plan_workflow when one does, and design_workflow when the user gave
+    a goal rather than steps. Call get_skill_catalog first for the skill and
+    tool names a step may target.
 
-    Available skills and their key tools:
-      - aiops: vm_power_on, vm_power_off, deploy_linked_clone, vm_create_plan,
-               vm_apply_plan, vm_rollback_plan, vm_guest_exec, batch_clone_vms
-      - monitor: get_alarms, get_events, list_virtual_machines, vm_info
-      - nsx: create_segment, delete_segment, create_tier1_gateway, list_segments
-      - nsx-security: create_dfw_rule, delete_dfw_rule, create_group
-      - aria: get_capacity_overview, list_anomalies, list_alerts, get_remaining_capacity
-      - vks: create_tkc_cluster, scale_tkc_cluster, delete_tkc_cluster
-      - storage: storage_iscsi_enable, storage_iscsi_add_target, vsan_health
-
-    Special step actions:
-      - require_approval: Pauses workflow for human confirmation
-
-    Each step dict must have: action, skill, tool, params.
-    Optional: rollback_tool, rollback_params.
+    Each step dict must have: action, skill, tool, params. Optional:
+    rollback_tool, rollback_params. action="require_approval" inserts a human
+    approval gate — run_workflow refuses ungated destructive steps.
 
     Args:
         name: Workflow name (used as workflow_type).
@@ -62,21 +52,8 @@ def create_workflow(
         save_as_template: If True, save as YAML to ~/.vmware/workflows/ for reuse.
 
     Returns:
-        dict with workflow_id and plan summary. Call run_workflow to execute.
-
-    Example:
-        create_workflow(
-            name="network_segment_setup",
-            description="Create segment with NAT and verify",
-            steps=[
-                {"action": "create_segment", "skill": "nsx", "tool": "create_segment",
-                 "params": {"segment_id": "app-seg", "display_name": "App Segment", ...}},
-                {"action": "create_nat", "skill": "nsx", "tool": "create_nat_rule",
-                 "params": {"tier1_id": "app-t1", "rule_id": "snat-1", ...}},
-                {"action": "verify", "skill": "nsx", "tool": "list_segments",
-                 "params": {}},
-            ]
-        )
+        dict with workflow_id and plan summary. Next call review_workflow to
+        check the plan, then run_workflow to execute; rollback undoes it.
     """
     from datetime import datetime, timezone
 
@@ -162,16 +139,10 @@ def design_workflow(
     design a multi-step workflow. Returns a DRAFT workflow with proposed steps
     for the user to review and edit before execution.
 
-    Design flow:
-      1. AI calls design_workflow(goal="...") → returns draft with proposed steps
-      2. User reviews: "step 3 should use vm_power_off instead" or "add an approval before step 4"
-      3. AI calls update_draft(workflow_id, ...) to modify
-      4. User confirms: "looks good"
-      5. AI calls confirm_draft(workflow_id) → state changes to PENDING
-      6. AI calls run_workflow(workflow_id) → execute
+    Design flow: design_workflow → update_draft (add steps, then iterate on
+    user feedback) → confirm_draft (state becomes PENDING) → run_workflow.
 
-    The AI should use get_skill_catalog() first to understand available tools,
-    then propose steps based on the user's goal.
+    Use get_skill_catalog() first to see which tools the steps may target.
 
     Args:
         goal: Natural language description of what the user wants to accomplish.
@@ -230,7 +201,9 @@ def update_draft(
     """[WRITE] Update a DRAFT workflow's name, description, or steps.
 
     Call this after design_workflow() to fill in the actual steps,
-    or to modify steps based on user feedback.
+    or to modify steps based on user feedback. Use it only while the workflow
+    is still DRAFT — after confirm_draft the steps are frozen and you must
+    create_workflow a new one instead.
 
     Each step dict: {action, skill, tool, params, rollback_tool?, rollback_params?}
     Use action="require_approval" for approval gates.
@@ -307,8 +280,10 @@ def confirm_draft(
 ) -> dict:
     """[WRITE] Confirm a draft workflow — changes state from DRAFT to PENDING.
 
-    After confirmation, the workflow can be executed via run_workflow().
-    Optionally saves as a YAML template for future reuse.
+    Use this once the user has approved the draft's steps; call update_draft
+    instead if anything still needs changing. After confirmation, the workflow
+    can be executed via run_workflow(). Optionally saves as a YAML template
+    for future reuse.
 
     Args:
         workflow_id: The draft workflow ID to confirm.

@@ -30,6 +30,9 @@ def plan_workflow(
 ) -> dict:
     """[WRITE] Create an execution plan for a multi-step workflow.
 
+    Use this when the goal matches one of the built-in types below; use
+    create_workflow instead when none of them fit.
+
     Available workflow types:
       - clone_and_test: Clone VM → apply changes → monitor → approve → commit
       - incident_response: Diagnose alert → collect info → approve → remediate
@@ -193,6 +196,8 @@ def run_workflow(workflow_id: str, force: bool = False) -> dict:
 def approve(workflow_id: str, approver: str = "") -> dict:
     """[WRITE] Approve a workflow that is waiting for human confirmation.
 
+    Use this only after showing the user the pending step and getting explicit
+    human consent; use cancel_workflow instead when the approval is rejected.
     Only works when workflow state is 'awaiting_approval'.
     After approval, execution continues to the next steps.
 
@@ -236,6 +241,8 @@ def approve(workflow_id: str, approver: str = "") -> dict:
 def rollback(workflow_id: str) -> dict:
     """[WRITE] Abort a workflow and rollback completed steps in reverse order.
 
+    Use this to undo steps that already ran; use cancel_workflow instead to
+    stop a workflow that has not started yet or whose approval was rejected.
     Works in any state except 'completed'. Irreversible steps are skipped.
     The workflow state is set to 'failed' after rollback.
 
@@ -243,7 +250,8 @@ def rollback(workflow_id: str) -> dict:
         workflow_id: The workflow ID to rollback.
 
     Returns:
-        Rollback results for each step.
+        Rollback results for each step. Check get_workflow_status afterwards
+        to see which steps were actually reversed and which were skipped.
     """
     try:
         wf = _get_store().load(workflow_id)
