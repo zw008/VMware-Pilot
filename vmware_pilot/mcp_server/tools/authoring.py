@@ -10,6 +10,7 @@ from vmware_policy import vmware_tool
 from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
 from vmware_pilot.mcp_server._shared import (
     _get_store,
+    _safe_error,
     _save_as_yaml,
     _validate_template_name,
     mcp,
@@ -134,7 +135,12 @@ def create_workflow(
             "message": f"Custom workflow created. Call run_workflow('{wf.id}') to execute.",
         }
     except Exception as e:
-        return {"error": str(e), "hint": "Failed to create workflow. Check step definitions."}
+        return {
+            "error": _safe_error(e, "create_workflow"),
+            "hint": "Every step needs action, skill, tool and params. Run "
+            "get_skill_catalog to confirm the skill and tool names are ones "
+            "pilot can drive, then call create_workflow again.",
+        }
 
 
 @mcp.tool(
@@ -364,7 +370,7 @@ def confirm_draft(
         }
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "confirm_draft"),
             "hint": f"Failed to confirm draft '{workflow_id}'. "
             f"Use get_workflow_status() to inspect it.",
         }

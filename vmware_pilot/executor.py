@@ -185,10 +185,13 @@ class WorkflowExecutor:
                 if redacted_key is not None:
                     raise ValueError(
                         f"Step {step.index} param '{redacted_key}' is the "
-                        f"redacted placeholder '{REDACTED_PLACEHOLDER}' — "
-                        "secrets do not survive a process restart; re-source "
-                        "it (from env/secret store) before re-running this "
-                        "workflow."
+                        f"redacted placeholder '{REDACTED_PLACEHOLDER}' — the "
+                        "workflow store masks secrets and the live value did not "
+                        "survive the process restart. Re-source the secret from "
+                        "its environment variable or secret store and re-create "
+                        "the workflow with create_workflow; re-running this "
+                        "stored copy only resends the placeholder. Use "
+                        "cancel_workflow to retire the stale one."
                     )
                 result = self._dispatch(step.skill, step.tool, resolved_params)
                 step.status = "success"
@@ -428,7 +431,10 @@ class WorkflowExecutor:
                 if not sep or not ref_part.endswith("__"):
                     raise ValueError(
                         f"Malformed step reference '{v}'. Expected "
-                        "'__from_step_N__' or '__from_step_N__:key'."
+                        "'__from_step_N__' or '__from_step_N__:key', where N is "
+                        "the 0-based index of an earlier step. Correct the step "
+                        "params with update_draft, then run review_workflow to "
+                        "confirm every reference resolves before executing."
                     )
                 idx_part = ref_part[len("__from_step_") : -2]
 
@@ -436,21 +442,28 @@ class WorkflowExecutor:
                 idx = int(idx_part)
             except ValueError:
                 raise ValueError(
-                    f"Malformed step reference '{v}': '{idx_part}' is not an integer step index."
+                    f"Malformed step reference '{v}': '{idx_part}' is not an "
+                    "integer step index. Expected '__from_step_N__' with N a "
+                    "whole number such as 0 or 1. Run review_workflow to see the "
+                    "step indices, then fix the reference with update_draft."
                 ) from None
 
             if idx < 0 or idx >= len(steps):
                 raise ValueError(
                     f"Step reference '{v}' points to step {idx}, but this "
-                    f"workflow has steps 0..{len(steps) - 1}. Fix the "
-                    "reference index in the step params."
+                    f"workflow has steps 0..{len(steps) - 1}. Run review_workflow "
+                    "to see the step list with its indices, then correct the "
+                    "reference index in the step params with update_draft."
                 )
             if idx >= current_index:
                 raise ValueError(
                     f"Step reference '{v}' is a forward/self reference "
                     f"(step {idx} has not produced a result before step "
                     f"{current_index} runs). References must point to an "
-                    "EARLIER step."
+                    "EARLIER step. Run review_workflow to see the execution "
+                    "order, then use update_draft to reorder the steps or "
+                    "re-point the reference at a step before "
+                    f"{current_index}."
                 )
 
             source = steps[idx]
@@ -458,8 +471,11 @@ class WorkflowExecutor:
                 raise ValueError(
                     f"Step reference '{v}' points to step {idx} "
                     f"({source.tool}) which has status '{source.status}', "
-                    "not 'success' — its result cannot be used. Ensure the "
-                    "referenced step ran successfully first."
+                    "not 'success' — its result cannot be used. Run "
+                    f"get_workflow_status to see why step {idx} did not "
+                    "succeed, resolve that cause and re-run the workflow; if "
+                    "it cannot succeed, use cancel_workflow and re-author "
+                    "without the reference."
                 )
 
             if result_key is not None:

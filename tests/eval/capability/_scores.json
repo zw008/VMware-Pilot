@@ -52,44 +52,20 @@
     },
     "error_actionability": {
       "detail": {
-        "dead_end_count": 3,
-        "dead_end_errors": [
-          {
-            "message": "Step reference '{}' points to step {}, but this workflow has steps 0..{}. Fix the reference index in",
-            "missing": [
-              "names_artifact",
-              "states_remedy"
-            ],
-            "where": "executor.py:443"
-          },
-          {
-            "message": "Step reference '{}' is a forward/self reference (step {} has not produced a result before step {} ru",
-            "missing": [
-              "names_artifact",
-              "states_remedy"
-            ],
-            "where": "executor.py:449"
-          },
-          {
-            "message": "Malformed step reference '{}': '{}' is not an integer step index.",
-            "missing": [
-              "names_artifact",
-              "states_remedy"
-            ],
-            "where": "executor.py:438"
-          }
-        ],
+        "composed_hint_sites": [],
+        "dead_end_count": 0,
+        "dead_end_errors": [],
         "per_dimension_pct": {
-          "names_artifact": 0.0,
+          "names_artifact": 100.0,
           "names_input": 100.0,
-          "states_remedy": 57.1
+          "states_remedy": 100.0
         },
         "raise_sites": 7
       },
       "maximum": 21,
-      "pct": 52.4,
+      "pct": 100.0,
       "unit": "points",
-      "value": 11
+      "value": 21
     },
     "manifest_context_headroom": {
       "detail": {
@@ -163,12 +139,30 @@
       "unit": "points",
       "value": 13
     },
+    "remedy_survives_truncation": {
+      "detail": {
+        "budget_chars": 500,
+        "over_budget": [],
+        "remedy_after_interpolation": [
+          "executor.py:452",
+          "executor.py:471",
+          "executor.py:186",
+          "executor.py:432",
+          "executor.py:444",
+          "_common.py:48"
+        ]
+      },
+      "maximum": 7,
+      "pct": 100.0,
+      "unit": "messages",
+      "value": 7
+    },
     "teaching_error_rate": {
       "detail": {},
       "maximum": 7,
-      "pct": 0.0,
+      "pct": 100.0,
       "unit": "messages",
-      "value": 0
+      "value": 7
     },
     "tool_description_quality": {
       "detail": {
@@ -225,12 +219,12 @@
         "carries_hint": 10,
         "dict_shaped": 10,
         "error_return_sites": 10,
-        "hint_names_artifact": 8
+        "hint_names_artifact": 10
       },
       "maximum": 30,
-      "pct": 93.3,
+      "pct": 100.0,
       "unit": "checks",
-      "value": 28
+      "value": 30
     }
   }
 }

@@ -7,7 +7,7 @@ from typing import Any
 
 from vmware_policy import vmware_tool
 
-from vmware_pilot.mcp_server._shared import _get_executor, _get_store, mcp
+from vmware_pilot.mcp_server._shared import _get_executor, _get_store, _safe_error, mcp
 from vmware_pilot.models import WorkflowState
 from vmware_pilot.review import review as _review_workflow_impl
 from vmware_pilot.templates import get_all_templates
@@ -73,7 +73,7 @@ def plan_workflow(
         }
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "plan_workflow"),
             "hint": "Check workflow_type and params. "
             "Use list_workflows() to see available templates.",
         }
@@ -175,7 +175,7 @@ def run_workflow(workflow_id: str, force: bool = False) -> dict:
         return _get_executor().run_until_checkpoint(wf)
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "run_workflow"),
             "hint": f"Workflow '{workflow_id}' execution failed. "
             f"Use get_workflow_status() to check state, or rollback().",
         }
@@ -218,7 +218,7 @@ def approve(workflow_id: str, approver: str = "") -> dict:
         return _get_executor().resume_after_approval(wf, approver=approver)
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "approve"),
             "hint": f"Approval failed for '{workflow_id}'. "
             f"Use get_workflow_status() to check state.",
         }
@@ -256,7 +256,7 @@ def rollback(workflow_id: str) -> dict:
         return _get_executor().rollback(wf)
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "rollback"),
             "hint": f"Rollback failed for '{workflow_id}'. "
             f"Use get_workflow_status() to check state.",
         }
@@ -301,6 +301,6 @@ def cancel_workflow(workflow_id: str, reason: str = "") -> dict:
         return _get_executor().cancel(wf, reason=reason)
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "cancel_workflow"),
             "hint": f"Cancel failed for '{workflow_id}'. Use get_workflow_status() to check state.",
         }

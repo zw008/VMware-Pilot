@@ -431,7 +431,10 @@ class TestRedactedSecretGuard:
         err = loaded.steps[0].result["error"]
         assert "redacted placeholder" in err
         assert "'password'" in err
-        assert "re-source" in err
+        # Case-insensitive: the instruction now opens the sentence ("Re-source
+        # the secret from its environment variable ..."). What matters is that
+        # the message tells the caller to re-source it, not its capitalisation.
+        assert "re-source" in err.lower()
 
     def test_in_process_happy_path_dispatches_real_value(self, tmp_path):
         # Same process: the live cache preserves the real secret, so dispatch

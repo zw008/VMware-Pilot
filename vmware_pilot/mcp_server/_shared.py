@@ -13,11 +13,52 @@ import logging
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from vmware_policy import sanitize
 
 from vmware_pilot.executor import WorkflowExecutor
 from vmware_pilot.models import WorkflowStore
 
 logger = logging.getLogger(__name__)
+
+#: Exception types this package raises on purpose, whose text it authors and
+#: therefore trusts to reach the agent verbatim. ``ValueError`` is the whole
+#: list because it is the whole vocabulary: the executor's step-reference and
+#: redacted-secret refusals, and ``_validate_template_name``'s traversal
+#: rejection. Each names what to run next.
+#:
+#: ``RuntimeError`` is deliberately absent. It is Python's generic catch-all, so
+#: allowing it through would pass any driven skill's raw text as if pilot had
+#: written it — and pilot dispatches to every other skill in the family, so that
+#: text is exactly the untrusted material this wrapper exists to withhold.
+#: ``executor._noop_dispatch`` does raise one with an authored message; it is
+#: documented as never invoked, and it wants a domain exception of its own
+#: rather than a hole here.
+_TEACHING_ERRORS = (ValueError,)
+
+
+def _safe_error(exc: Exception, tool: str) -> str:
+    """Return an agent-safe error string; log full detail server-side only.
+
+    Pilot orchestrates the other skills, so an unplanned exception here can be
+    carrying a driven skill's raw API text — a vCenter fault body, a NSX
+    response, a task URL with credentials in its userinfo. Full traceback goes
+    to the server log; the agent sees only a control-char-stripped,
+    length-capped message.
+
+    This does not touch gate refusals. Every guard in the executor — terminal
+    state, missing approver, not-awaiting-approval — *returns* its payload
+    rather than raising, so a refusal never reaches this function and cannot be
+    reduced to a class name by it.
+
+    500 rather than the family's usual 300: three of the executor's six authored
+    refusals are already longer than 300 characters before interpolation, the
+    redacted-secret one at 403, and in each the remedy comes last. Capping at
+    300 would cut off the instruction and leave the diagnosis.
+    """
+    logger.error("Tool %s failed", tool, exc_info=True)
+    if isinstance(exc, _TEACHING_ERRORS):
+        return sanitize(str(exc), 500)
+    return f"{type(exc).__name__}: operation failed."
 
 mcp = FastMCP(
     "vmware-pilot",

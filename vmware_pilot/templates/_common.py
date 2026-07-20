@@ -45,7 +45,13 @@ def parallel_group(group_id: str, steps: list[WorkflowStep]) -> list[WorkflowSte
         The same list (for chaining convenience).
     """
     if not group_id:
-        raise ValueError("group_id must be non-empty")
+        raise ValueError(
+            f"group_id must be non-empty (got {group_id!r}). It is the tag that "
+            "marks these steps as concurrently dispatchable — pass a short stable "
+            "id such as 'gather-symptoms', or omit the parallel_group() call to "
+            "leave the steps sequential. review_workflow groups steps by this id, "
+            "so an empty tag would hide the group from its safety checks."
+        )
     for s in steps:
         s.group_id = group_id
     return steps

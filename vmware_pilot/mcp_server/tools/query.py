@@ -5,7 +5,7 @@ from __future__ import annotations
 from vmware_policy import vmware_tool
 
 from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
-from vmware_pilot.mcp_server._shared import _get_store, mcp
+from vmware_pilot.mcp_server._shared import _get_store, _safe_error, mcp
 from vmware_pilot.review import review as _review_workflow_impl
 
 
@@ -46,7 +46,7 @@ def review_workflow(workflow_id: str) -> dict:
         return _review_workflow_impl(wf)
     except Exception as e:
         return {
-            "error": str(e),
+            "error": _safe_error(e, "review_workflow"),
             "hint": f"Review failed for '{workflow_id}'. "
             f"Use get_workflow_status() to inspect raw state.",
         }
@@ -76,7 +76,10 @@ def get_workflow_status(workflow_id: str) -> dict:
             return {"error": f"Workflow '{workflow_id}' not found"}
         return wf.to_dict()
     except Exception as e:
-        return {"error": str(e), "hint": "Use list_workflows() to see active workflow IDs."}
+        return {
+            "error": _safe_error(e, "get_workflow_status"),
+            "hint": "Use list_workflows() to see active workflow IDs.",
+        }
 
 
 @mcp.tool(
@@ -119,7 +122,13 @@ def list_workflows() -> dict:
             "active_workflows": active,
         }
     except Exception as e:
-        return {"error": str(e), "hint": "Failed to list workflows."}
+        return {
+            "error": _safe_error(e, "list_workflows"),
+            "hint": "Built-in templates always load, so this usually means a "
+            "malformed custom template — check the YAML files in "
+            "~/.vmware/workflows/ against the file named in 'error', then run "
+            "list_workflows again.",
+        }
 
 
 @mcp.tool(
