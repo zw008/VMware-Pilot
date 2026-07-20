@@ -1,0 +1,236 @@
+{
+  "_comment": "Capability eval scores. Regenerate with: pytest -m capability. These are tracked trends, not pass/fail gates \u2014 see _scoring.py.",
+  "scores": {
+    "entity_reachability_full": {
+      "detail": {
+        "broken_chains": [],
+        "entry_points": [
+          "create_workflow",
+          "design_workflow",
+          "plan_workflow",
+          "list_workflows",
+          "get_skill_catalog"
+        ],
+        "reachable_on_surface": 8,
+        "reachable_only_via_description": 0,
+        "required_entity_params": 8,
+        "required_params_classified": "8/14",
+        "tool_count": 13
+      },
+      "maximum": 8,
+      "pct": 100.0,
+      "unit": "required entity params",
+      "value": 8
+    },
+    "entity_reachability_read_only": {
+      "detail": {
+        "broken_chains": [],
+        "entry_points": [
+          "list_workflows",
+          "get_skill_catalog"
+        ],
+        "reachable_on_surface": 2,
+        "reachable_only_via_description": 0,
+        "required_entity_params": 2,
+        "required_params_classified": "2/2",
+        "tool_count": 4
+      },
+      "maximum": 2,
+      "pct": 100.0,
+      "unit": "required entity params",
+      "value": 2
+    },
+    "entry_point_availability": {
+      "detail": {
+        "full_entry_points": 5,
+        "read_only_entry_points": 2
+      },
+      "maximum": 4,
+      "pct": 50.0,
+      "unit": "entry points",
+      "value": 2
+    },
+    "error_actionability": {
+      "detail": {
+        "dead_end_count": 3,
+        "dead_end_errors": [
+          {
+            "message": "Step reference '{}' points to step {}, but this workflow has steps 0..{}. Fix the reference index in",
+            "missing": [
+              "names_artifact",
+              "states_remedy"
+            ],
+            "where": "executor.py:443"
+          },
+          {
+            "message": "Step reference '{}' is a forward/self reference (step {} has not produced a result before step {} ru",
+            "missing": [
+              "names_artifact",
+              "states_remedy"
+            ],
+            "where": "executor.py:449"
+          },
+          {
+            "message": "Malformed step reference '{}': '{}' is not an integer step index.",
+            "missing": [
+              "names_artifact",
+              "states_remedy"
+            ],
+            "where": "executor.py:438"
+          }
+        ],
+        "per_dimension_pct": {
+          "names_artifact": 0.0,
+          "names_input": 100.0,
+          "states_remedy": 57.1
+        },
+        "raise_sites": 7
+      },
+      "maximum": 21,
+      "pct": 52.4,
+      "unit": "points",
+      "value": 11
+    },
+    "manifest_context_headroom": {
+      "detail": {
+        "heaviest_tools": {
+          "cancel_workflow": 210,
+          "create_workflow": 411,
+          "design_workflow": 244,
+          "run_workflow": 248,
+          "update_draft": 222
+        },
+        "manifest_tokens": 2280,
+        "mean_tokens_per_tool": 175.4,
+        "reference_context": 16384,
+        "tool_count": 13
+      },
+      "maximum": 16384,
+      "pct": 86.1,
+      "unit": "tokens",
+      "value": 14104
+    },
+    "parameter_documentation_coverage": {
+      "detail": {
+        "undocumented_by_tool": {}
+      },
+      "maximum": 23,
+      "pct": 100.0,
+      "unit": "parameters",
+      "value": 23
+    },
+    "per_tool_token_discipline": {
+      "detail": {
+        "ceiling": 350,
+        "over_ceiling": {
+          "create_workflow": 411
+        }
+      },
+      "maximum": 13,
+      "pct": 92.3,
+      "unit": "tools",
+      "value": 12
+    },
+    "read_only_manifest_saving": {
+      "detail": {
+        "full_manifest_tokens": 2280,
+        "full_tool_count": 13,
+        "gated_manifest_tokens": 395,
+        "gated_tool_count": 4,
+        "withheld_tools": [
+          "approve",
+          "cancel_workflow",
+          "confirm_draft",
+          "create_workflow",
+          "design_workflow",
+          "plan_workflow",
+          "rollback",
+          "run_workflow",
+          "update_draft"
+        ]
+      },
+      "maximum": 2280,
+      "pct": 82.7,
+      "unit": "tokens",
+      "value": 1885
+    },
+    "read_write_marker_coverage": {
+      "detail": {
+        "unmarked": []
+      },
+      "maximum": 13,
+      "pct": 100.0,
+      "unit": "points",
+      "value": 13
+    },
+    "teaching_error_rate": {
+      "detail": {},
+      "maximum": 7,
+      "pct": 0.0,
+      "unit": "messages",
+      "value": 0
+    },
+    "tool_description_quality": {
+      "detail": {
+        "per_dimension_pct": {
+          "args": 100.0,
+          "gotcha": 76.9,
+          "marker": 100.0,
+          "next_hop": 69.2,
+          "what": 100.0,
+          "when": 46.2
+        },
+        "tools_graded": 13,
+        "weakest_tools": {
+          "approve": [
+            "when"
+          ],
+          "confirm_draft": [
+            "when"
+          ],
+          "get_skill_catalog": [
+            "gotcha",
+            "next_hop"
+          ],
+          "get_workflow_status": [
+            "gotcha",
+            "next_hop",
+            "when"
+          ],
+          "list_workflows": [
+            "next_hop",
+            "when"
+          ],
+          "plan_workflow": [
+            "when"
+          ],
+          "rollback": [
+            "next_hop",
+            "when"
+          ],
+          "update_draft": [
+            "gotcha",
+            "when"
+          ]
+        }
+      },
+      "maximum": 78,
+      "pct": 82.1,
+      "unit": "points",
+      "value": 64
+    },
+    "tool_failure_payload_quality": {
+      "detail": {
+        "bare_string_error_lines": [],
+        "carries_hint": 10,
+        "dict_shaped": 10,
+        "error_return_sites": 10,
+        "hint_names_artifact": 8
+      },
+      "maximum": 30,
+      "pct": 93.3,
+      "unit": "checks",
+      "value": 28
+    }
+  }
+}
