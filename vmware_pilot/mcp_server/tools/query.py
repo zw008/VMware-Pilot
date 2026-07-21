@@ -66,12 +66,8 @@ def get_workflow_status(workflow_id: str) -> dict:
 
     Use this to poll a workflow after run_workflow and to find out why one
     stopped: outcome='dispatch_required' means you must perform the pending
-    steps yourself, 'awaiting_approval' means call approve — except under
-    VMWARE_READ_ONLY=true, where approve is withheld from the tool list along
-    with every other write tool. There the workflow cannot be advanced from
-    this server at all: report the pending approval to a human operator
-    instead of trying to clear it. Returns a point-in-time snapshot and does
-    not advance the workflow.
+    steps yourself, 'awaiting_approval' means call approve. Returns a
+    point-in-time snapshot and does not advance the workflow.
 
     Args:
         workflow_id: The workflow ID to query.

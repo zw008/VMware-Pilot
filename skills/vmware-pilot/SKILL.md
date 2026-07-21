@@ -10,7 +10,7 @@ installer:
   kind: uv
   package: vmware-pilot
 allowed-tools: [Bash]
-metadata: {"openclaw":{"requires":{"bins":["vmware-pilot"]},"optional":{"env":["VMWARE_PILOT_READ_ONLY","VMWARE_READ_ONLY","VMWARE_AUDIT_APPROVED_BY"]},"primaryEnv":"NONE","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
+metadata: {"openclaw":{"requires":{"bins":["vmware-pilot"]},"optional":{"env":["VMWARE_AUDIT_APPROVED_BY"]},"primaryEnv":"NONE","homepage":"https://github.com/zw008/VMware-Pilot","emoji":"🧭","os":["macos","linux"]}}
 compatibility: >
   vmware-policy auto-installed as Python dependency (provides @vmware_tool decorator and audit logging). All workflow operations audited to ~/.vmware/audit.db.
   No direct vCenter/NSX credentials: Pilot is an orchestration layer that delegates to companion skills (aiops, monitor, nsx, etc.) which handle their own auth.
@@ -164,14 +164,6 @@ This is intentional v2-style architecture: pilot's context stays small, state is
 | | `rollback` | high | Reverse completed steps |
 | | `get_workflow_status` | low | State + audit log |
 
-## Read-Only Mode
-
-A tool from the table above missing from `list_tools()` means this deployment is in read-only mode: `VMWARE_PILOT_READ_ONLY=true`, or the family-wide `VMWARE_READ_ONLY=true`, withholds write tools at start-up. Pilot has no config file — the env vars are the only switch.
-
-Counter-intuitively, **orchestration is pilot's write surface**. All 9 orchestration tools (`design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`, `create_workflow`, `run_workflow`, `approve`, `rollback`, `cancel_workflow`) go, leaving the 4 query tools: a read-only pilot can inspect workflows but cannot author, run, approve, roll back or cancel one. That is a deliberate lockdown, not a fault — do not retry, and do not look for another tool or a CLI path to the same change. Name the blocked operation and say an operator must clear the switch and restart the server.
-
-`VMWARE_READ_ONLY=true` with `VMWARE_PILOT_READ_ONLY=false` keeps orchestration here and leaves enforcement to the downstream skills — the per-skill variable wins over the family one. Running with local or small models? See [`references/agent-guardrails.md`](references/agent-guardrails.md).
-
 ## Built-in Templates (15)
 
 The five most-used:
@@ -305,7 +297,7 @@ All operations are automatically audited via vmware-policy (`@vmware_tool` decor
 - Every tool call logged to `~/.vmware/audit.db` (SQLite, framework-agnostic)
 - Policy rules enforced via `~/.vmware/rules.yaml` (deny rules, maintenance windows, risk levels)
 - Risk classification: each tool tagged as low/medium/high/critical
-- Environment scoping: policy rules apply per environment, and skills with a config declare `environment:` per target. Pilot has no targets of its own and reports a constant `local` — its writes go to the local workflow DB, never to a VMware estate. The approval gate on the real change is not skipped: it applies downstream when the agent performs each step through the target skill's own MCP tool, against that skill's declared environment
+- Environment scoping: policy rules can scope by environment (an optional label an opt-in `deny` rule may match), and skills with a config may declare `environment:` per target. Pilot has no targets of its own and reports a constant `local` — its writes go to the local workflow DB, never to a VMware estate. Pilot's approval gate is a step in its own workflow: it pauses before the agent dispatches a destructive step, and the target skill then applies its own policy rules when the step runs
 - View recent operations: `vmware-audit log --last 20`
 - View denied operations: `vmware-audit log --status denied`
 

@@ -18,12 +18,6 @@
 | 12 | `review_workflow` | low | Discovery | Sanity-check a planned workflow before anyone runs it |
 | 13 | `cancel_workflow` | medium | Control | Cancel a workflow — moves it to the terminal CANCELLED state |
 
-> In read-only mode (`VMWARE_PILOT_READ_ONLY=true` or the family-wide `VMWARE_READ_ONLY=true`;
-> pilot has no config file) the 9 write tools above do not appear in `list_tools()`, leaving
-> the 4 read tools. Classification comes from each tool's `[READ]`/`[WRITE]` docstring marker
-> — see README. Note that orchestration *is* pilot's write surface, so a read-only pilot can
-> inspect workflows but cannot author, run, approve, roll back or cancel one.
-
 ---
 
 ## Built-in Templates (15)

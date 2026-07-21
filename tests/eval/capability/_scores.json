@@ -22,33 +22,14 @@
       "unit": "required entity params",
       "value": 8
     },
-    "entity_reachability_read_only": {
-      "detail": {
-        "broken_chains": [],
-        "entry_points": [
-          "list_workflows",
-          "get_skill_catalog"
-        ],
-        "reachable_on_surface": 2,
-        "reachable_only_via_description": 0,
-        "required_entity_params": 2,
-        "required_params_classified": "2/2",
-        "tool_count": 4
-      },
-      "maximum": 2,
-      "pct": 100.0,
-      "unit": "required entity params",
-      "value": 2
-    },
     "entry_point_availability": {
       "detail": {
-        "full_entry_points": 5,
-        "read_only_entry_points": 2
+        "full_entry_points": 5
       },
-      "maximum": 4,
-      "pct": 50.0,
+      "maximum": 13,
+      "pct": 38.5,
       "unit": "entry points",
-      "value": 2
+      "value": 5
     },
     "error_actionability": {
       "detail": {
@@ -104,29 +85,6 @@
       "pct": 100.0,
       "unit": "tools",
       "value": 13
-    },
-    "read_only_manifest_saving": {
-      "detail": {
-        "full_manifest_tokens": 2271,
-        "full_tool_count": 13,
-        "gated_manifest_tokens": 499,
-        "gated_tool_count": 4,
-        "withheld_tools": [
-          "approve",
-          "cancel_workflow",
-          "confirm_draft",
-          "create_workflow",
-          "design_workflow",
-          "plan_workflow",
-          "rollback",
-          "run_workflow",
-          "update_draft"
-        ]
-      },
-      "maximum": 2271,
-      "pct": 78.0,
-      "unit": "tokens",
-      "value": 1772
     },
     "read_write_marker_coverage": {
       "detail": {

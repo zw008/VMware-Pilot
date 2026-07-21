@@ -138,21 +138,20 @@ rules:
 
 ### Environment Scoping
 
-Policy rules scope by environment ("irreversible work in production needs a
-second person"). Skills that connect to a VMware estate declare `environment:`
-(`production` / `staging` / `lab`) per target in their own `config.yaml`; a
-target that declares none is treated as unknown, and state-changing operations
-against it currently log a warning — **the next major release will refuse
-them**.
+Policy rules can scope by environment. Skills that connect to a VMware estate
+may declare `environment:` (`production` / `staging` / `lab`) per target in
+their own `config.yaml` — an optional label an environment-scoped `deny` rule
+in `~/.vmware/rules.yaml` can match on (for example, to freeze writes on
+`production`). A target with no label is simply not matched by such a rule.
 
 vmware-pilot has no targets and needs no such declaration: it reports a
 constant `local`. That is accurate rather than an exemption — pilot's own
 writes land in `~/.vmware/workflows.db`, and its executor never calls VMware
 APIs. When a workflow reaches an executable step, the MCP server records it as
 `not_executed` and returns `dispatch_required`; the calling agent then performs
-that step through the target skill's own MCP tool, where that skill's declared
-environment applies and the approval gate fires. The gate moves downstream, it
-is not skipped.
+that step through the target skill's own MCP tool, where that skill's own
+policy rules apply. Pilot's approval gate is a step in its own workflow — it
+pauses before the agent dispatches the step, so it is not skipped.
 
 ### Audit Database
 
@@ -188,57 +187,6 @@ vmware-monitor doctor
 vmware-avi doctor
 # etc.
 ```
-
----
-
-## Read-Only Mode
-
-Off by default. When it is on, every write tool is removed from the MCP registry at
-start-up, so `list_tools()` never offers it — the guarantee is structural rather than a
-prompt instruction the model may ignore.
-
-**Pilot has no config file, so the environment is the only switch.** There is no
-`read_only:` setting to write. Precedence:
-
-| Priority | Signal | Scope |
-|---|---|---|
-| 1 | `VMWARE_PILOT_READ_ONLY` | This skill only |
-| 2 | `VMWARE_READ_ONLY` | Every installed VMware skill |
-| 3 | (nothing set) | Off |
-
-```json
-{
-  "mcpServers": {
-    "vmware-pilot": {
-      "command": "vmware-pilot",
-      "args": ["mcp"],
-      "env": { "VMWARE_PILOT_READ_ONLY": "true" }
-    }
-  }
-}
-```
-
-**Know what you are locking.** Orchestration is pilot's write surface: 9 of its 13 tools
-are withheld — `design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`,
-`create_workflow`, `run_workflow`, `approve`, `rollback`, `cancel_workflow`. Only
-`list_workflows`, `get_skill_catalog`, `get_workflow_status` and `review_workflow`
-survive, so the server can inspect existing workflows and nothing else. To protect the
-estate while keeping orchestration, set the family variable on and the per-skill variable
-off — `{"VMWARE_READ_ONLY": "true", "VMWARE_PILOT_READ_ONLY": "false"}` — and let each
-downstream skill enforce the lock on its own tools.
-
-**Fail-closed.** If the mode is requested but cannot be *proven*, the server refuses to
-start with `ReadOnlyGateError`: the FastMCP tool registry cannot be enumerated (usually an
-incompatible `mcp` version), or a removal did not take effect. One case does *not* abort —
-an unparseable value (`VMWARE_PILOT_READ_ONLY=ture`) resolves to **on** with a warning
-naming the accepted values, so a typo locks the deployment down rather than leaving it
-open.
-
-**Verifying.** Pilot ships no `doctor` command; the start-up log is the record. The server
-logs a warning naming every withheld tool when the mode engages, and `list_workflows` /
-`get_workflow_status` remaining while `run_workflow` is absent is the same signal from the
-client side. Companion skills with a `doctor` (e.g. `vmware-log-insight doctor`) report
-their own resolved state and where it came from.
 
 ---
 

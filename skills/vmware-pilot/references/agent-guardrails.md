@@ -34,53 +34,13 @@ These are structural, so it cannot.
 
 | Guardrail you would otherwise prompt for | Now enforced by |
 |---|---|
-| "Work exclusively in read-only mode and never modify anything" | **Read-only mode.** Set `VMWARE_READ_ONLY=true` and 9 of its 13 tools are withheld at startup. `list_tools()` never offers them, so the model cannot call what it cannot see. |
-| "Do not design or run a workflow — only inspect the existing ones" | Same gate, and this is the counter-intuitive part: **orchestration is pilot's write surface.** All nine of `design_workflow`, `update_draft`, `confirm_draft`, `plan_workflow`, `create_workflow`, `run_workflow`, `approve`, `rollback` and `cancel_workflow` go, leaving four query tools — `list_workflows`, `review_workflow`, `get_workflow_status` and `get_skill_catalog`. A read-only pilot can inspect workflows but cannot author, run, approve, roll back or cancel one. |
-| "Never approve your own plan" | **`approve` is a write tool** and is withheld in read-only mode along with the rest. Under the family switch, an agent physically cannot self-approve. |
 | "Do not execute steps yourself — hand them back for a human to run" | **The dispatch contract.** Pilot never calls a companion skill's MCP tools; it returns a step description and the calling agent invokes the tool. This is architecture, not etiquette. |
-| "Check the plan makes sense before running it" | **`review_workflow`** performs a structural sanity check and returns `approved` or `needs_revision`. It is a read tool, so it survives read-only mode. |
+| "Check the plan makes sense before running it" | **`review_workflow`** performs a structural sanity check and returns `approved` or `needs_revision`. It is a read tool that inspects a definition without executing it. |
 | "Log every state change you make" | **The `@vmware_tool` decorator.** Every workflow transition is recorded to `~/.vmware/audit.db`, and `get_workflow_status` returns the state plus its audit log. |
 
 The one guardrail this skill does not hand you: pilot's list tools return bare
 collections, not the family `{items, returned, limit, total, truncated, hint}`
 envelope. Truncation is not self-declaring here.
-
-### Turning read-only mode on
-
-One variable covers every skill in the family:
-
-```json
-{
-  "mcpServers": {
-    "vmware-pilot": {
-      "command": "vmware-pilot",
-      "args": ["mcp"],
-      "env": { "VMWARE_READ_ONLY": "true" }
-    }
-  }
-}
-```
-
-**This skill has no `config.yaml`**, so the two environment variables are the
-only switch — there is no `read_only:` configuration setting to fall back on.
-Precedence is per-skill env → family env → off.
-
-The useful combination here is the inverse of the usual one:
-
-```bash
-VMWARE_READ_ONLY=true          # whole family read-only
-VMWARE_PILOT_READ_ONLY=false   # …but keep orchestration available
-```
-
-That keeps design and dry planning alive in pilot while every downstream skill
-refuses the actual change — the per-skill variable wins over the family one. It
-is a good posture for letting a small model draft a plan you intend to read
-before anyone runs it.
-
-An unparseable value (`VMWARE_READ_ONLY=ture`) enables read-only mode rather
-than silently ignoring the typo. A blocked tool is a lockdown, not a fault:
-name the operation that cannot be performed and stop, rather than retrying or
-looking for another route to the same change.
 
 ---
 
@@ -118,8 +78,8 @@ your agent's instruction block.
   invoke that skill's MCP tool and report the result back. Pilot will not do it.
 - Never claim a step ran because pilot advanced its state. State advanced
   because you told pilot it did.
-- If you cannot invoke the tool a step names — it is not installed, or it is
-  withheld by read-only mode — say so and stop. Do not improvise a substitute.
+- If you cannot invoke the tool a step names — it is not installed or is
+  otherwise unavailable — say so and stop. Do not improvise a substitute.
 
 ## Designing workflows
 

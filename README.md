@@ -30,6 +30,34 @@ uv tool install vmware-pilot
 vmware-pilot mcp          # start the MCP server (stdio)
 ```
 
+### Offline / Air-Gapped Install (from source)
+
+This project uses the modern PEP 517 build system (hatchling), so there is **no
+`setup.py`** by design — that is expected, not a missing file. If you cloned the
+source and hit `ERROR: File "setup.py" or "setup.cfg" not found ... editable mode
+currently requires a setuptools-based build`, your `pip` is older than 21.3 and
+cannot do an *editable* (`-e`) install with a non-setuptools backend. Editable
+mode is a developer convenience, not needed to run the tool — do one of:
+
+```bash
+# From the source tree — a normal (non-editable) install builds a wheel:
+pip install .              # NOT  pip install -e .
+
+# ...or upgrade pip first, and editable works too:
+pip install --upgrade pip && pip install -e .
+```
+
+For a **truly air-gapped host**, build the wheels on a connected machine and copy
+them over — the target then needs no network:
+
+```bash
+# On a connected machine, collect this package + its dependencies as wheels:
+pip wheel . -w dist        # → dist/*.whl   (or: uv build, for just this package)
+
+# Copy dist/ to the air-gapped host, then install offline:
+pip install --no-index --find-links dist vmware-pilot
+```
+
 ## MCP Tools (13 — 4 read, 9 write)
 
 | Tool | Description |
@@ -48,8 +76,6 @@ vmware-pilot mcp          # start the MCP server (stdio)
 | `rollback` | Abort and rollback at any stage |
 | `cancel_workflow` | Cancel a workflow — move it to the terminal CANCELLED state |
 
-- **Read-only mode** (v1.8.0) — one env var strips all 9 orchestration write tools (design/update/confirm draft, plan/create, run, approve, rollback, cancel) from the MCP registry, leaving the 4 query tools; env vars are the only switch here, pilot has no config file — see [Read-Only Mode](#read-only-mode)
-
 ## MCP Configuration
 
 ```json
@@ -67,53 +93,6 @@ vmware-pilot mcp          # start the MCP server (stdio)
 > works, but `uvx` re-resolves against PyPI on every start and fails behind a TLS-inspecting
 > corporate proxy (`invalid peer certificate: UnknownIssuer`). The installed entry point above
 > touches the network zero times; set `UV_NATIVE_TLS=true` if you must use `uvx`.
-
-## Read-Only Mode
-
-A prompt instruction is advisory — a model can ignore it. Read-only mode is structural: turn it on and every write tool is removed from the MCP registry at startup, so `list_tools()` never offers them and the model cannot call what it cannot see. Off by default, and fail-closed: if the mode is requested but cannot be guaranteed, the server refuses to start.
-
-```json
-{
-  "mcpServers": {
-    "vmware-pilot": {
-      "command": "vmware-pilot",
-      "args": ["mcp"],
-      "env": { "VMWARE_PILOT_READ_ONLY": "true" }
-    }
-  }
-}
-```
-
-**Read this before enabling it here.** vmware-pilot is an orchestrator, so orchestration *is* its write surface. 9 of its 13 tools are writes, and all 9 are withheld:
-
-`plan_workflow`, `run_workflow`, `approve`, `rollback`, `cancel_workflow`, `create_workflow`, `design_workflow`, `update_draft`, `confirm_draft`
-
-Only the 4 read tools survive:
-
-| Tool | Still available for |
-|------|---------------------|
-| `list_workflows` | Browsing built-in and custom templates |
-| `get_skill_catalog` | Seeing which skills and tools a workflow could call |
-| `get_workflow_status` | State, diff report and audit log of an existing workflow |
-| `review_workflow` | Static review of a workflow definition before anyone runs it |
-
-A read-only pilot therefore cannot author, plan, run, approve, roll back or cancel anything — it can only inspect workflows that already exist. Note that pilot's writes land in its own workflow database (`~/.vmware/workflows.db`), not on a VMware estate; it has no vCenter connection of its own. They are classified as writes because `run_workflow` is where a workflow is dispatched and `approve` is the gate that releases it — the infrastructure change happens downstream, in the target skill's process, under that skill's own read-only setting.
-
-So if you set the family-wide switch to protect your estate but still want orchestration, keep pilot writable and let the downstream skills enforce the lock — the per-skill variable wins over the family one:
-
-```json
-{
-  "mcpServers": {
-    "vmware-pilot": {
-      "command": "vmware-pilot",
-      "args": ["mcp"],
-      "env": { "VMWARE_READ_ONLY": "true", "VMWARE_PILOT_READ_ONLY": "false" }
-    }
-  }
-}
-```
-
-Precedence: per-skill env (`VMWARE_PILOT_READ_ONLY`) → family env (`VMWARE_READ_ONLY`) → off. Unlike the other family members, vmware-pilot reads no config file, so the environment variables are the only switch — there is no `read_only:` config key. Startup logs list exactly which tools were withheld.
 
 ## License
 

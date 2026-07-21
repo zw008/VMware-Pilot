@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from vmware_policy import apply_read_only_gate, set_environment_resolver
+from vmware_policy import set_environment_resolver
 
 from vmware_pilot.mcp_server._catalog import SKILL_CATALOG
 from vmware_pilot.mcp_server._shared import _save_as_yaml, _validate_template_name, mcp
@@ -65,15 +65,6 @@ from vmware_pilot.mcp_server.tools.query import (  # noqa: E402
     get_workflow_status,
     list_workflows,
     review_workflow,
-)
-
-# Applied once, after every tool module above has registered. In read-only mode
-# the write tools are removed from the registry, so list_tools() never offers
-# them — the guarantee is structural rather than a prompt instruction the model
-# may ignore (VMware-AIops issue #31). vmware-pilot has no config file, so the
-# env vars are the only switch.
-WITHHELD_WRITE_TOOLS: list[str] = apply_read_only_gate(
-    mcp, "vmware-pilot", config_flag=None
 )
 
 
@@ -126,7 +117,6 @@ __all__ = [
     "mcp",
     "main",
     "SKILL_CATALOG",
-    "WITHHELD_WRITE_TOOLS",
     "_get_store",
     "_get_executor",
     "_validate_template_name",
